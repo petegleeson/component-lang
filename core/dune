@@ -1,0 +1,5 @@
+(library
+  (name component_lang_core)
+  (flags (-w -40 -w +26))
+  (public_name component-lang)
+  (libraries  pastel.lib))

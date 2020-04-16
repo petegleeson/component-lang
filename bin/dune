@@ -1,0 +1,4 @@
+(executable
+  (name Complier)
+  (public_name component_lang_compiler)
+  (libraries console.lib component_lang_core))
