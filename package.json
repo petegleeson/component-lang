@@ -21,6 +21,7 @@
     "doc": "esy dune build @doc"
   },
   "dependencies": {
+    "@opam/ppx_deriving": "^4.4.1",
     "@opam/dune": "*",
     "@reason-native/console": "*",
     "@reason-native/pastel": "*",

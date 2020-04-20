@@ -8,7 +8,7 @@ let is_number = char => {
 
 let is_operator = char => {
   let v = int_of_char(char);
-  47 < v && v < 58;
+  41 < v && v < 48;
 };
 
 let isCharacter = char => {
@@ -17,6 +17,7 @@ let isCharacter = char => {
 };
 
 exception LexerError(string);
+exception ParserError(string);
 
 let parse = (filename: string) => {
   let in_channel = open_in(filename);
@@ -40,75 +41,113 @@ let parse = (filename: string) => {
         None;
       }
     );
-  let token_stream =
-    Stream.from(_ => {
-      let rec tokenise = ((point, current), next) => {
-        let (line, col) = point;
-        if (is_number(current)) {
-          Some(
-            switch (next) {
-            | Some(((next_line, next_col), lookahead))
-                when is_number(lookahead) =>
-              switch (
-                tokenise(Stream.next(char_stream), Stream.peek(char_stream))
-              ) {
-              | Some(Token.Number((_, fin), value)) =>
-                Number((point, fin), Char.escaped(current) ++ value)
-              | _ =>
-                raise(
-                  LexerError(
-                    Printf.sprintf(
-                      "expected number on line %i and column %i",
-                      next_line,
-                      next_col,
+
+  let tokens = {
+    let result = ref([]);
+    Stream.iter(
+      item => {
+        let rec tokenise = ((point, current), next) => {
+          let (line, col) = point;
+          if (is_number(current)) {
+            Some(
+              switch (next) {
+              | Some(((next_line, next_col), lookahead))
+                  when is_number(lookahead) =>
+                switch (
+                  tokenise(
+                    Stream.next(char_stream),
+                    Stream.peek(char_stream),
+                  )
+                ) {
+                | Some(Token.Number((_, fin), value)) =>
+                  Number((point, fin), Char.escaped(current) ++ value)
+                | _ =>
+                  raise(
+                    LexerError(
+                      Printf.sprintf(
+                        "expected number on line %i and column %i",
+                        next_line,
+                        next_col,
+                      ),
                     ),
-                  ),
+                  )
+                }
+              | _ =>
+                Token.Number(
+                  (point, (line, col + 1)),
+                  Char.escaped(current),
                 )
-              }
-            | _ => Number((point, (line, col + 1)), Char.escaped(current))
-            },
-          );
-        } else if (is_operator(current)) {
-          let loc = (point, (line, col + 1));
-          Some(
-            switch (current) {
-            | '+' => Token.Operator(loc, Plus)
-            | '-' => Token.Operator(loc, Minus)
-            | '*' => Token.Operator(loc, Multiply)
-            | '/' => Token.Operator(loc, Divide)
-            | _ => Token.Invalid(loc, Char.escaped(current))
-            },
-          );
-        } else {
-          None;
+              },
+            );
+          } else if (is_operator(current)) {
+            let loc = (point, (line, col + 1));
+            Some(
+              switch (current) {
+              | '+' => Token.Operator(loc, Plus)
+              | '-' => Token.Operator(loc, Minus)
+              | '*' => Token.Operator(loc, Multiply)
+              | '/' => Token.Operator(loc, Divide)
+              | _ => Token.Invalid(loc, Char.escaped(current))
+              },
+            );
+          } else {
+            None;
+          };
         };
+        switch (tokenise(item, Stream.peek(char_stream))) {
+        | Some(t) => result := [t, ...result^]
+        | None => ()
+        };
+      },
+      char_stream,
+    );
+    List.rev(result.contents);
+  };
+
+  let rec generate_ast = toks => {
+    switch (toks) {
+    | [token, Token.Operator(loc, operator), ...rest] =>
+      let left = generate_ast([token]);
+      let right = generate_ast(rest);
+      switch (right) {
+      | BinaryOperator(right_node)
+          when
+            Token.precendence(right_node.operator)
+            < Token.precendence(operator) =>
+        BinaryOperator({
+          loc: (
+            Source.get_start(get_location(left)),
+            Source.get_end(get_location(right_node.right)),
+          ),
+          operator: right_node.operator,
+          left:
+            BinaryOperator({
+              left,
+              right: right_node.left,
+              loc: (
+                Source.get_start(get_location(left)),
+                Source.get_end(get_location(right_node.left)),
+              ),
+              operator,
+            }),
+          right: right_node.right,
+        })
+      | _ =>
+        BinaryOperator({
+          loc: (
+            Source.get_start(get_location(left)),
+            Source.get_end(get_location(right)),
+          ),
+          operator,
+          left,
+          right,
+        })
       };
-
-      tokenise(Stream.next(char_stream), Stream.peek(char_stream));
-    });
-
-  let rec generate_ast = (current, lookahead) => {
-    switch (current, lookahead) {
-    | (token, Some(Token.Operator(loc, operator))) =>
-      let left = generate_ast(token, None);
-      Stream.junk(token_stream);
-      let right =
-        generate_ast(Stream.next(token_stream), Stream.peek(token_stream));
-      BinaryOperator({loc: get_location(left), operator, left, right});
-    | (Token.Number(loc, raw), _) => Int({loc, raw})
-    | _ => Unknown({loc: Token.get_location(current)})
+    | [Token.Number(loc, raw)]
+    | [Token.Number(loc, raw), ..._] => Int({loc, raw})
+    | _ => raise(ParserError("unexpected token"))
     };
   };
 
-  let rec generate_program = () => {
-    switch (Stream.peek(token_stream)) {
-    | None => []
-    | Some(token) => [
-        generate_ast(Stream.next(token_stream), Stream.peek(token_stream)),
-        ...generate_program(),
-      ]
-    };
-  };
-
-  Program({loc: ((1, 1), position.contents), body: generate_program()});
+  generate_ast(tokens);
 };

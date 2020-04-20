@@ -2,11 +2,20 @@ open Source;
 
 type raw = string;
 
+[@deriving show]
 type operator =
   | Plus
   | Minus
   | Multiply
   | Divide;
+
+let precendence = op =>
+  switch (op) {
+  | Plus
+  | Minus => 0
+  | Multiply
+  | Divide => 100
+  };
 
 type case =
   | Number(location, raw)

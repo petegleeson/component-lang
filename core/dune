@@ -1,5 +1,6 @@
 (library
   (name component_lang_core)
   (flags (-w -40 -w +26))
+  (preprocess (pps ppx_deriving.show))
   (public_name component-lang)
-  (libraries  pastel.lib))
+  (libraries pastel.lib))

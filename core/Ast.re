@@ -1,21 +1,42 @@
 open Source;
 
-type case =
-  | BinaryOperator({
-      loc: location,
-      operator: Token.operator,
-      left: case,
-      right: case,
-    })
-  | Int({
-      loc: location,
-      raw: string,
-    })
-  | Program({
-      loc: location,
-      body: list(case),
-    })
-  | Unknown({loc: location});
+module BinaryOperator = {
+  [@deriving show]
+  type t('n) = {
+    loc: location,
+    operator: Token.operator,
+    left: 'n,
+    right: 'n,
+  };
+};
+
+module Int = {
+  [@deriving show]
+  type t = {
+    loc: location,
+    raw: string,
+  };
+};
+
+module Program = {
+  [@deriving show]
+  type t('n) = {
+    loc: location,
+    body: list('n),
+  };
+};
+
+module Unknown = {
+  [@deriving show]
+  type t = {loc: location};
+};
+
+[@deriving show]
+type t =
+  | BinaryOperator(BinaryOperator.t(t))
+  | Int(Int.t)
+  | Program(Program.t(t))
+  | Unknown(Unknown.t);
 
 let get_location = case =>
   switch (case) {
