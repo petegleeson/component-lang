@@ -1,5 +1,6 @@
 open Source;
 
+[@deriving show]
 type raw = string;
 
 [@deriving show]
@@ -17,6 +18,7 @@ let precendence = op =>
   | Divide => 100
   };
 
+[@deriving show]
 type case =
   | Number(location, raw)
   | Operator(location, operator)

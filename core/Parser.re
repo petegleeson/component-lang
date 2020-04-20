@@ -11,13 +11,67 @@ let is_operator = char => {
   41 < v && v < 48;
 };
 
-let isCharacter = char => {
+let is_character = char => {
   let v = int_of_char(char);
   64 < v && v < 91 || 96 < v && v < 123;
 };
 
 exception LexerError(string);
 exception ParserError(string);
+
+let rec generate_ast = tokens => {
+  switch (tokens) {
+  | [token, Token.Operator(loc, operator), ...rest] =>
+    let (left, _) = generate_ast([token]);
+    let (right, remaining) = generate_ast(rest);
+    (
+      switch (right) {
+      | BinaryOperator(right_node)
+          when
+            Token.precendence(right_node.operator)
+            < Token.precendence(operator) =>
+        BinaryOperator({
+          loc: (
+            Source.get_start(get_location(left)),
+            Source.get_end(get_location(right_node.right)),
+          ),
+          operator: right_node.operator,
+          left:
+            BinaryOperator({
+              loc: (
+                Source.get_start(get_location(left)),
+                Source.get_end(get_location(right_node.left)),
+              ),
+              operator,
+              left,
+              right: right_node.left,
+            }),
+          right: right_node.right,
+        })
+      | _ =>
+        BinaryOperator({
+          loc: (
+            Source.get_start(get_location(left)),
+            Source.get_end(get_location(right)),
+          ),
+          operator,
+          left,
+          right,
+        })
+      },
+      remaining,
+    );
+  | [Token.Number(loc, raw), ...rest] => (Int({loc, raw}), rest)
+  | _ => raise(ParserError("unexpected token"))
+  };
+};
+
+let rec generate_asts = tokens => {
+  switch (generate_ast(tokens)) {
+  | (ast, []) => [ast]
+  | (ast, remaining) => List.cons(ast, generate_asts(remaining))
+  };
+};
 
 let parse = (filename: string) => {
   let in_channel = open_in(filename);
@@ -104,50 +158,5 @@ let parse = (filename: string) => {
     List.rev(result.contents);
   };
 
-  let rec generate_ast = toks => {
-    switch (toks) {
-    | [token, Token.Operator(loc, operator), ...rest] =>
-      let left = generate_ast([token]);
-      let right = generate_ast(rest);
-      switch (right) {
-      | BinaryOperator(right_node)
-          when
-            Token.precendence(right_node.operator)
-            < Token.precendence(operator) =>
-        BinaryOperator({
-          loc: (
-            Source.get_start(get_location(left)),
-            Source.get_end(get_location(right_node.right)),
-          ),
-          operator: right_node.operator,
-          left:
-            BinaryOperator({
-              left,
-              right: right_node.left,
-              loc: (
-                Source.get_start(get_location(left)),
-                Source.get_end(get_location(right_node.left)),
-              ),
-              operator,
-            }),
-          right: right_node.right,
-        })
-      | _ =>
-        BinaryOperator({
-          loc: (
-            Source.get_start(get_location(left)),
-            Source.get_end(get_location(right)),
-          ),
-          operator,
-          left,
-          right,
-        })
-      };
-    | [Token.Number(loc, raw)]
-    | [Token.Number(loc, raw), ..._] => Int({loc, raw})
-    | _ => raise(ParserError("unexpected token"))
-    };
-  };
-
-  generate_ast(tokens);
+  Program({loc: ((1, 1), position.contents), body: generate_asts(tokens)});
 };
