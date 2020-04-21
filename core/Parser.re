@@ -35,6 +35,7 @@ let rec generate_ast = tokens => {
             Source.get_start(get_location(left)),
             Source.get_end(get_location(right_node.right)),
           ),
+          kind: Int,
           operator: right_node.operator,
           left:
             BinaryOperator({
@@ -42,6 +43,7 @@ let rec generate_ast = tokens => {
                 Source.get_start(get_location(left)),
                 Source.get_end(get_location(right_node.left)),
               ),
+              kind: Int,
               operator,
               left,
               right: right_node.left,
@@ -54,6 +56,7 @@ let rec generate_ast = tokens => {
             Source.get_start(get_location(left)),
             Source.get_end(get_location(right)),
           ),
+          kind: Int,
           operator,
           left,
           right,
@@ -61,7 +64,7 @@ let rec generate_ast = tokens => {
       },
       remaining,
     );
-  | [Token.Number(loc, raw), ...rest] => (Int({loc, raw}), rest)
+  | [Token.Number(loc, raw), ...rest] => (Int({loc, kind: Int, raw}), rest)
   | _ => raise(ParserError("unexpected token"))
   };
 };
@@ -158,5 +161,9 @@ let parse = (filename: string) => {
     List.rev(result.contents);
   };
 
-  Program({loc: ((1, 1), position.contents), body: generate_asts(tokens)});
+  Program({
+    loc: ((1, 1), position.contents),
+    kind: Void,
+    body: generate_asts(tokens),
+  });
 };

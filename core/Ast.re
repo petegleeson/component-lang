@@ -1,5 +1,12 @@
 open Source;
 
+[@deriving show]
+type kind =
+  | Int
+  | Error
+  | Var
+  | Void;
+
 module BinaryOperator = {
   [@deriving show]
   type t('n) = {
@@ -7,6 +14,7 @@ module BinaryOperator = {
     operator: Token.operator,
     left: 'n,
     right: 'n,
+    kind,
   };
 };
 
@@ -15,6 +23,7 @@ module Int = {
   type t = {
     loc: location,
     raw: string,
+    kind,
   };
 };
 
@@ -23,12 +32,16 @@ module Program = {
   type t('n) = {
     loc: location,
     body: list('n),
+    kind,
   };
 };
 
 module Unknown = {
   [@deriving show]
-  type t = {loc: location};
+  type t = {
+    loc: location,
+    kind,
+  };
 };
 
 [@deriving show]
