@@ -22,11 +22,11 @@ let precendence = op =>
 type case =
   | Number(location, raw)
   | Operator(location, operator)
-  | Invalid(location, raw);
+  | Unknown(location, raw);
 
 let get_location = case =>
   switch (case) {
   | Number(loc, _)
   | Operator(loc, _)
-  | Invalid(loc, _) => loc
+  | Unknown(loc, _) => loc
   };
