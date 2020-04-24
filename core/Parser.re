@@ -20,14 +20,22 @@ let is_whitespace = char => {
   char === ' ' || char === '\n';
 };
 
-exception LexerError(Token.case);
-exception ParserError(string);
-
-module FCP =
-  FileContextPrinter.Make({
-    let config =
-      FileContextPrinter.Config.initialize({linesBefore: 3, linesAfter: 3});
+exception
+  LexerError({
+    raw: string,
+    loc: location,
+    hint: option(string),
   });
+exception
+  ParserError({
+    raw: string,
+    loc: location,
+    hint: option(string),
+  });
+
+type result('a) =
+  | Success('a)
+  | Failure(Error.t);
 
 let rec generate_ast = tokens => {
   switch (tokens) {
@@ -75,7 +83,7 @@ let rec generate_ast = tokens => {
       remaining,
     );
   | [Token.Number(loc, raw), ...rest] => (Int({loc, kind: Int, raw}), rest)
-  | _ => raise(ParserError("unexpected token"))
+  | _ => raise(ParserError({loc: ((1, 1), (1, 1)), raw: "", hint: None}))
   };
 };
 
@@ -86,7 +94,7 @@ let rec generate_asts = tokens => {
   };
 };
 
-let parse = (filename: string) => {
+let parse = filename => {
   let in_channel = open_in(filename);
   let position: ref(point) = ref((1, 1));
   let char_stream =
@@ -109,7 +117,7 @@ let parse = (filename: string) => {
       }
     );
 
-  let tokens =
+  let lexer_result =
     try({
       let result = ref([]);
       Stream.iter(
@@ -130,12 +138,11 @@ let parse = (filename: string) => {
                     Number((point, fin), Char.escaped(current) ++ value)
                   | _ =>
                     raise(
-                      LexerError(
-                        Unknown(
-                          (point, lookaheadPoint),
-                          Char.escaped(lookahead),
-                        ),
-                      ),
+                      LexerError({
+                        loc: (point, lookaheadPoint),
+                        raw: Char.escaped(lookahead),
+                        hint: Some("Expected a number"),
+                      }),
                     )
                   }
                 | _ =>
@@ -153,50 +160,62 @@ let parse = (filename: string) => {
                 | '-' => Token.Operator(loc, Minus)
                 | '*' => Token.Operator(loc, Multiply)
                 | '/' => Token.Operator(loc, Divide)
-                | _ => Token.Unknown(loc, Char.escaped(current))
+                | _ =>
+                  raise(
+                    LexerError({
+                      loc,
+                      raw: Char.escaped(current),
+                      hint: None,
+                    }),
+                  )
                 },
               );
             } else if (is_whitespace(current)) {
               None;
             } else {
               let loc = (point, (line, col + 1));
-              Some(Token.Unknown(loc, Char.escaped(current)));
+              raise(
+                LexerError({loc, raw: Char.escaped(current), hint: None}),
+              );
             };
           };
           switch (tokenise(item, Stream.peek(char_stream))) {
-          | Some(Unknown(loc, x)) => raise(LexerError(Unknown(loc, x)))
           | Some(t) => result := [t, ...result^]
           | None => ()
           };
         },
         char_stream,
       );
-      List.rev(result.contents);
+      Success(List.rev(result.contents));
     }) {
-    | LexerError(Unknown(loc, raw)) =>
-      let ((line, col), _) = loc;
-      switch (FCP.printFile(filename, loc)) {
-      | Some(lines) =>
-        Printf.printf(
-          "An unexpected character prevented compilation of %s.\n\n%s\n\nCharacter \"%s\" on line %i at position %i prevented compilation.\n",
-          filename,
-          lines,
-          raw,
-          line,
-          col,
-        )
-      | _ => ()
-      };
-      [];
+    | LexerError({hint, raw, loc}) =>
+      Failure({
+        title: "An unexpected character prevented compilation",
+        detail: "Character " ++ raw,
+        stage: Lexing,
+        filename,
+        hint,
+        loc,
+      })
     };
 
-  Program({
-    loc: ((1, 1), position.contents),
-    kind: Void,
-    body:
-      switch (tokens) {
-      | [] => []
-      | x => generate_asts(x)
-      },
-  });
+  switch (lexer_result) {
+  | Success(tokens) =>
+    switch (generate_asts(tokens)) {
+    | body =>
+      Success(
+        Program({loc: ((1, 1), position.contents), kind: Void, body}),
+      )
+    | exception (ParserError({hint, raw, loc})) =>
+      Failure({
+        title: "An unexpected character prevented compilation",
+        detail: "Character " ++ raw,
+        stage: Parsing,
+        filename,
+        hint,
+        loc,
+      })
+    }
+  | Failure(x) => Failure(x)
+  };
 };

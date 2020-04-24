@@ -21,12 +21,10 @@ let precendence = op =>
 [@deriving show]
 type case =
   | Number(location, raw)
-  | Operator(location, operator)
-  | Unknown(location, raw);
+  | Operator(location, operator);
 
 let get_location = case =>
   switch (case) {
   | Number(loc, _)
-  | Operator(loc, _)
-  | Unknown(loc, _) => loc
+  | Operator(loc, _) => loc
   };
