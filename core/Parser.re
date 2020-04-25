@@ -83,6 +83,14 @@ let rec generate_ast = tokens => {
       remaining,
     );
   | [Token.Number(loc, raw), ...rest] => (Int({loc, kind: Int, raw}), rest)
+  | [token] =>
+    raise(
+      ParserError({loc: Token.get_location(token), raw: "", hint: None}),
+    )
+  | [token, ...rest] =>
+    raise(
+      ParserError({loc: Token.get_location(token), raw: "", hint: None}),
+    )
   | _ => raise(ParserError({loc: ((1, 1), (1, 1)), raw: "", hint: None}))
   };
 };
@@ -118,77 +126,81 @@ let parse = filename => {
     );
 
   let lexer_result =
-    try({
-      let result = ref([]);
-      Stream.iter(
-        item => {
-          let rec tokenise = ((point, current), next) => {
-            let (line, col) = point;
-            if (is_number(current)) {
-              Some(
-                switch (next) {
-                | Some((lookaheadPoint, lookahead)) when is_number(lookahead) =>
-                  switch (
-                    tokenise(
-                      Stream.next(char_stream),
-                      Stream.peek(char_stream),
+    switch (
+      {
+        let result = ref([]);
+        Stream.iter(
+          item => {
+            let rec tokenise = ((point, current), next) => {
+              let (line, col) = point;
+              if (is_number(current)) {
+                Some(
+                  switch (next) {
+                  | Some((lookaheadPoint, lookahead))
+                      when is_number(lookahead) =>
+                    switch (
+                      tokenise(
+                        Stream.next(char_stream),
+                        Stream.peek(char_stream),
+                      )
+                    ) {
+                    | Some(Token.Number((_, fin), value)) =>
+                      Number((point, fin), Char.escaped(current) ++ value)
+                    | _ =>
+                      raise(
+                        LexerError({
+                          loc: (point, lookaheadPoint),
+                          raw: Char.escaped(lookahead),
+                          hint: Some("Expected a number"),
+                        }),
+                      )
+                    }
+                  | _ =>
+                    Token.Number(
+                      (point, (line, col + 1)),
+                      Char.escaped(current),
                     )
-                  ) {
-                  | Some(Token.Number((_, fin), value)) =>
-                    Number((point, fin), Char.escaped(current) ++ value)
+                  },
+                );
+              } else if (is_operator(current)) {
+                let loc = (point, (line, col + 1));
+                Some(
+                  switch (current) {
+                  | '+' => Token.Operator(loc, Plus)
+                  | '-' => Token.Operator(loc, Minus)
+                  | '*' => Token.Operator(loc, Multiply)
+                  | '/' => Token.Operator(loc, Divide)
                   | _ =>
                     raise(
                       LexerError({
-                        loc: (point, lookaheadPoint),
-                        raw: Char.escaped(lookahead),
-                        hint: Some("Expected a number"),
+                        loc,
+                        raw: Char.escaped(current),
+                        hint: None,
                       }),
                     )
-                  }
-                | _ =>
-                  Token.Number(
-                    (point, (line, col + 1)),
-                    Char.escaped(current),
-                  )
-                },
-              );
-            } else if (is_operator(current)) {
-              let loc = (point, (line, col + 1));
-              Some(
-                switch (current) {
-                | '+' => Token.Operator(loc, Plus)
-                | '-' => Token.Operator(loc, Minus)
-                | '*' => Token.Operator(loc, Multiply)
-                | '/' => Token.Operator(loc, Divide)
-                | _ =>
-                  raise(
-                    LexerError({
-                      loc,
-                      raw: Char.escaped(current),
-                      hint: None,
-                    }),
-                  )
-                },
-              );
-            } else if (is_whitespace(current)) {
-              None;
-            } else {
-              let loc = (point, (line, col + 1));
-              raise(
-                LexerError({loc, raw: Char.escaped(current), hint: None}),
-              );
+                  },
+                );
+              } else if (is_whitespace(current)) {
+                None;
+              } else {
+                let loc = (point, (line, col + 1));
+                raise(
+                  LexerError({loc, raw: Char.escaped(current), hint: None}),
+                );
+              };
             };
-          };
-          switch (tokenise(item, Stream.peek(char_stream))) {
-          | Some(t) => result := [t, ...result^]
-          | None => ()
-          };
-        },
-        char_stream,
-      );
-      Success(List.rev(result.contents));
-    }) {
-    | LexerError({hint, raw, loc}) =>
+            switch (tokenise(item, Stream.peek(char_stream))) {
+            | Some(t) => result := [t, ...result^]
+            | None => ()
+            };
+          },
+          char_stream,
+        );
+        List.rev(result.contents);
+      }
+    ) {
+    | tokens => Success(tokens)
+    | exception (LexerError({hint, raw, loc})) =>
       Failure({
         title: "An unexpected character prevented compilation",
         detail: "Character " ++ raw,
@@ -208,8 +220,8 @@ let parse = filename => {
       )
     | exception (ParserError({hint, raw, loc})) =>
       Failure({
-        title: "An unexpected character prevented compilation",
-        detail: "Character " ++ raw,
+        title: "A syntax error prevented compilation",
+        detail: "Character",
         stage: Parsing,
         filename,
         hint,
