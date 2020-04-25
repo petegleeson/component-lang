@@ -102,103 +102,99 @@ let rec generate_asts = tokens => {
   };
 };
 
-let parse = filename => {
+let chars_from_filename = filename => {
   let in_channel = open_in(filename);
-  let position: ref(point) = ref((1, 1));
-  let char_stream =
-    Stream.from(_ =>
-      try({
-        let (line, column) = position.contents;
-        let char = input_char(in_channel);
-        let result = Some(((line, column), char));
-        position.contents = (
-          switch (char) {
-          | '\n' => (line + 1, 1)
-          | _ => (line, column + 1)
-          }
-        );
-        result;
-      }) {
-      | End_of_file =>
-        close_in(in_channel);
-        None;
-      }
-    );
+  let chars = ref([]);
+  while (switch (input_char(in_channel)) {
+         | exception End_of_file => false
+         | c =>
+           chars := [c, ...chars^];
+           true;
+         }) {
+    ();
+  };
+  List.rev(chars^);
+};
+
+let token_from_char =
+  Token.(
+    (char, position) => {
+      let (line, col) = position;
+      let loc = (position, (line, col + 1));
+      (
+        switch (char) {
+        | ('+' | '-' | '*' | '/') as op =>
+          Some(
+            Operator(
+              loc,
+              switch (op) {
+              | '+' => Plus
+              | '-' => Minus
+              | '*' => Multiply
+              | '/' => Divide
+              | x =>
+                raise(LexerError({loc, raw: Char.escaped(x), hint: None}))
+              },
+            ),
+          )
+        | ('0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') as num =>
+          Some(Number(loc, Char.escaped(num)))
+        | ' '
+        | '\n' => None
+        | x => raise(LexerError({loc, raw: Char.escaped(x), hint: None}))
+        },
+        switch (char) {
+        | '\n' => (line + 1, 1)
+        | _ => (line, col + 1)
+        },
+      );
+    }
+  );
+
+let tokenise =
+  Token.(
+    chars => {
+      chars
+      |> List.fold_left(
+           (((pending, tokens), position), char) => {
+             let (token, next_position) = token_from_char(char, position);
+             (
+               switch (token, pending) {
+               | (
+                   Some(Number((_, finish), x)),
+                   Some(Number((start, _), y)),
+                 ) => (
+                   Some(Number((start, finish), y ++ x)),
+                   tokens,
+                 )
+               | (Some(t), Some(pt)) => (Some(t), [pt, ...tokens])
+               | (Some(t), None) => (Some(t), tokens)
+               | (None, Some(pt)) => (None, [pt, ...tokens])
+               | (None, None) => (None, tokens)
+               },
+               next_position,
+             );
+           },
+           ((None, []), (1, 1)),
+         )
+      |> (
+        (((pt, tokens), _)) =>
+          (
+            switch (pt) {
+            | Some(t) => [t, ...tokens]
+            | _ => tokens
+            }
+          )
+          |> List.rev
+      );
+    }
+  );
+
+let parse = filename => {
+  let chars = chars_from_filename(filename);
 
   let lexer_result =
-    switch (
-      {
-        let result = ref([]);
-        Stream.iter(
-          item => {
-            let rec tokenise = ((point, current), next) => {
-              let (line, col) = point;
-              if (is_number(current)) {
-                Some(
-                  switch (next) {
-                  | Some((lookaheadPoint, lookahead))
-                      when is_number(lookahead) =>
-                    switch (
-                      tokenise(
-                        Stream.next(char_stream),
-                        Stream.peek(char_stream),
-                      )
-                    ) {
-                    | Some(Token.Number((_, fin), value)) =>
-                      Number((point, fin), Char.escaped(current) ++ value)
-                    | _ =>
-                      raise(
-                        LexerError({
-                          loc: (point, lookaheadPoint),
-                          raw: Char.escaped(lookahead),
-                          hint: Some("Expected a number"),
-                        }),
-                      )
-                    }
-                  | _ =>
-                    Token.Number(
-                      (point, (line, col + 1)),
-                      Char.escaped(current),
-                    )
-                  },
-                );
-              } else if (is_operator(current)) {
-                let loc = (point, (line, col + 1));
-                Some(
-                  switch (current) {
-                  | '+' => Token.Operator(loc, Plus)
-                  | '-' => Token.Operator(loc, Minus)
-                  | '*' => Token.Operator(loc, Multiply)
-                  | '/' => Token.Operator(loc, Divide)
-                  | _ =>
-                    raise(
-                      LexerError({
-                        loc,
-                        raw: Char.escaped(current),
-                        hint: None,
-                      }),
-                    )
-                  },
-                );
-              } else if (is_whitespace(current)) {
-                None;
-              } else {
-                let loc = (point, (line, col + 1));
-                raise(
-                  LexerError({loc, raw: Char.escaped(current), hint: None}),
-                );
-              };
-            };
-            switch (tokenise(item, Stream.peek(char_stream))) {
-            | Some(t) => result := [t, ...result^]
-            | None => ()
-            };
-          },
-          char_stream,
-        );
-        List.rev(result.contents);
-      }
-    ) {
+    switch (tokenise(chars)) {
     | tokens => Success(tokens)
     | exception (LexerError({hint, raw, loc})) =>
       Failure({
@@ -214,10 +210,7 @@ let parse = filename => {
   switch (lexer_result) {
   | Success(tokens) =>
     switch (generate_asts(tokens)) {
-    | body =>
-      Success(
-        Program({loc: ((1, 1), position.contents), kind: Void, body}),
-      )
+    | body => Success(Program({loc: ((1, 1), (1, 1)), kind: Void, body}))
     | exception (ParserError({hint, raw, loc})) =>
       Failure({
         title: "A syntax error prevented compilation",
