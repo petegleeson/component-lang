@@ -7,54 +7,40 @@ type kind =
   | Var
   | Void;
 
-module BinaryOperator = {
-  [@deriving show]
-  type t('n) = {
+module rec BinaryOperator: {
+  type t = {
     loc: location,
     operator: Token.operator,
-    left: 'n,
-    right: 'n,
+    left: Expression.t,
+    right: Expression.t,
     kind,
   };
-};
-
-module Int = {
-  [@deriving show]
+} = BinaryOperator
+and Expression: {
+  type t =
+    | BinaryOperator(BinaryOperator.t)
+    | Int(Int.t);
+} = Expression
+and Int: {
   type t = {
     loc: location,
     raw: string,
     kind,
   };
-};
-
-module Program = {
-  [@deriving show]
-  type t('n) = {
-    loc: location,
-    body: list('n),
-    kind,
-  };
-};
-
-module Unknown = {
-  [@deriving show]
+} = Int
+and Program: {
   type t = {
     loc: location,
+    body: list(Expression.t),
     kind,
   };
-};
+} = Program;
 
-[@deriving show]
-type t =
-  | BinaryOperator(BinaryOperator.t(t))
-  | Int(Int.t)
-  | Program(Program.t(t))
-  | Unknown(Unknown.t);
-
-let get_location = case =>
-  switch (case) {
-  | BinaryOperator({loc})
-  | Int({loc})
-  | Program({loc})
-  | Unknown({loc}) => loc
-  };
+let get_location =
+  Expression.(
+    expression =>
+      switch (expression) {
+      | Int({loc}) => loc
+      | BinaryOperator({loc}) => loc
+      }
+  );

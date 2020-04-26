@@ -1,5 +1,4 @@
 open Source;
-open Ast;
 
 let is_number = char => {
   let v = int_of_char(char);
@@ -26,81 +25,10 @@ exception
     loc: location,
     hint: option(string),
   });
-exception
-  ParserError({
-    raw: string,
-    loc: location,
-    hint: option(string),
-  });
 
 type result('a) =
   | Success('a)
   | Failure(Error.t);
-
-let rec generate_ast = tokens => {
-  switch (tokens) {
-  | [token, Token.Operator(loc, operator), ...rest] =>
-    let (left, _) = generate_ast([token]);
-    let (right, remaining) = generate_ast(rest);
-    (
-      switch (right) {
-      | BinaryOperator(right_node)
-          when
-            Token.precendence(right_node.operator)
-            < Token.precendence(operator) =>
-        BinaryOperator({
-          loc: (
-            Source.get_start(get_location(left)),
-            Source.get_end(get_location(right_node.right)),
-          ),
-          kind: Int,
-          operator: right_node.operator,
-          left:
-            BinaryOperator({
-              loc: (
-                Source.get_start(get_location(left)),
-                Source.get_end(get_location(right_node.left)),
-              ),
-              kind: Int,
-              operator,
-              left,
-              right: right_node.left,
-            }),
-          right: right_node.right,
-        })
-      | _ =>
-        BinaryOperator({
-          loc: (
-            Source.get_start(get_location(left)),
-            Source.get_end(get_location(right)),
-          ),
-          kind: Int,
-          operator,
-          left,
-          right,
-        })
-      },
-      remaining,
-    );
-  | [Token.Number(loc, raw), ...rest] => (Int({loc, kind: Int, raw}), rest)
-  | [token] =>
-    raise(
-      ParserError({loc: Token.get_location(token), raw: "", hint: None}),
-    )
-  | [token, ...rest] =>
-    raise(
-      ParserError({loc: Token.get_location(token), raw: "", hint: None}),
-    )
-  | _ => raise(ParserError({loc: ((1, 1), (1, 1)), raw: "", hint: None}))
-  };
-};
-
-let rec generate_asts = tokens => {
-  switch (generate_ast(tokens)) {
-  | (ast, []) => [ast]
-  | (ast, remaining) => List.cons(ast, generate_asts(remaining))
-  };
-};
 
 let chars_from_filename = filename => {
   let in_channel = open_in(filename);
@@ -139,6 +67,7 @@ let token_from_char =
           )
         | ('0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') as num =>
           Some(Number(loc, Char.escaped(num)))
+        | ';' => Some(Semicolon(loc))
         | ' '
         | '\n' => None
         | x => raise(LexerError({loc, raw: Char.escaped(x), hint: None}))
@@ -190,6 +119,118 @@ let tokenise =
     }
   );
 
+exception
+  ParserError({
+    loc: location,
+    hint: option(string),
+  });
+
+let rec match_expression = tokens => {
+  Token.(
+    Source.(
+      Ast.Expression.(
+        switch (tokens) {
+        | [token, Operator(loc, operator), ...rest] =>
+          let left = match_expression([token]);
+          let right = match_expression(rest);
+          switch (right) {
+          | BinaryOperator(right_node)
+              when precendence(right_node.operator) < precendence(operator) =>
+            BinaryOperator({
+              loc: (
+                get_start(Ast.get_location(left)),
+                get_end(Ast.get_location(right_node.right)),
+              ),
+              kind: Int,
+              operator: right_node.operator,
+              left:
+                BinaryOperator({
+                  loc: (
+                    get_start(Ast.get_location(left)),
+                    get_end(Ast.get_location(right_node.left)),
+                  ),
+                  kind: Int,
+                  operator,
+                  left,
+                  right: right_node.left,
+                }),
+              right: right_node.right,
+            })
+          | _ =>
+            BinaryOperator({
+              loc: (
+                get_start(Ast.get_location(left)),
+                get_end(Ast.get_location(right)),
+              ),
+              kind: Int,
+              operator,
+              left,
+              right,
+            })
+          };
+        | [Number(loc, raw), ...rest] => Int({loc, kind: Int, raw})
+        | [token] =>
+          raise(ParserError({loc: get_location(token), hint: None}))
+        | _ => raise(ParserError({loc: ((1, 1), (1, 1)), hint: None}))
+        }
+      )
+    )
+  );
+};
+
+let match_expressions = tokens => {
+  let rec tokens_to_semi = ts =>
+    switch (ts) {
+    | [] => ([], [])
+    | [Token.Semicolon(loc), ...rest] => ([], rest)
+    | [last] =>
+      raise(
+        ParserError({
+          loc: Token.get_location(last),
+          hint: Some("Missing Semicolon"),
+        }),
+      )
+    | [t, ...rest] =>
+      let (results, remaining) = tokens_to_semi(rest);
+      ([t, ...results], remaining);
+    };
+
+  let rec tokens_to_expressions = ts =>
+    switch (tokens_to_semi(ts)) {
+    | ([], []) => []
+    | (line, []) => [match_expression(line)]
+    | (line, remaining) => [
+        match_expression(line),
+        ...tokens_to_expressions(remaining),
+      ]
+    };
+
+  tokens_to_expressions(tokens);
+};
+
+let match_program = tokens => {
+  let body = match_expressions(tokens);
+  let rec loc_range =
+    Ast.(
+      statements =>
+        switch (statements) {
+        | [] => ((1, 1), (1, 1))
+        | [exp] => get_location(exp)
+        | [exp, ...rest] => (
+            {
+              let (start, _) = get_location(exp);
+              start;
+            },
+            {
+              let (_, finish) = loc_range(rest);
+              finish;
+            },
+          )
+        }
+    );
+  Ast.Program.{loc: loc_range(body), body, kind: Void};
+};
+
 let parse = filename => {
   let chars = chars_from_filename(filename);
 
@@ -209,9 +250,9 @@ let parse = filename => {
 
   switch (lexer_result) {
   | Success(tokens) =>
-    switch (generate_asts(tokens)) {
-    | body => Success(Program({loc: ((1, 1), (1, 1)), kind: Void, body}))
-    | exception (ParserError({hint, raw, loc})) =>
+    switch (match_program(tokens)) {
+    | program => Success(program)
+    | exception (ParserError({hint, loc})) =>
       Failure({
         title: "A syntax error prevented compilation",
         detail: "Character",
