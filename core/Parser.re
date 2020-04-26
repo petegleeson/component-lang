@@ -168,8 +168,8 @@ let rec match_expression = tokens => {
               right,
             })
           };
-        | [Number(loc, raw), ...rest] => Int({loc, kind: Int, raw})
-        | [token] =>
+        | [Number(loc, raw)] => Int({loc, kind: Int, raw})
+        | [token, ...rest] =>
           raise(ParserError({loc: get_location(token), hint: None}))
         | _ => raise(ParserError({loc: ((1, 1), (1, 1)), hint: None}))
         }
@@ -179,7 +179,7 @@ let rec match_expression = tokens => {
 };
 
 let match_expressions = tokens => {
-  let rec tokens_to_semi = ts =>
+  let rec tokens_until_semi = ts =>
     switch (ts) {
     | [] => ([], [])
     | [Token.Semicolon(loc), ...rest] => ([], rest)
@@ -191,12 +191,12 @@ let match_expressions = tokens => {
         }),
       )
     | [t, ...rest] =>
-      let (results, remaining) = tokens_to_semi(rest);
+      let (results, remaining) = tokens_until_semi(rest);
       ([t, ...results], remaining);
     };
 
   let rec tokens_to_expressions = ts =>
-    switch (tokens_to_semi(ts)) {
+    switch (tokens_until_semi(ts)) {
     | ([], []) => []
     | (line, []) => [match_expression(line)]
     | (line, remaining) => [
