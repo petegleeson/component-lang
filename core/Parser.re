@@ -125,110 +125,92 @@ exception
     hint: option(string),
   });
 
-let rec match_expression = tokens => {
-  Token.(
-    Source.(
-      Ast.Expression.(
-        switch (tokens) {
-        | [token, Operator(loc, operator), ...rest] =>
-          let left = match_expression([token]);
-          let right = match_expression(rest);
-          switch (right) {
-          | BinaryOperator(right_node)
-              when precendence(right_node.operator) < precendence(operator) =>
-            BinaryOperator({
-              loc: (
-                get_start(Ast.get_location(left)),
-                get_end(Ast.get_location(right_node.right)),
-              ),
-              kind: Int,
-              operator: right_node.operator,
-              left:
-                BinaryOperator({
-                  loc: (
-                    get_start(Ast.get_location(left)),
-                    get_end(Ast.get_location(right_node.left)),
-                  ),
-                  kind: Int,
-                  operator,
-                  left,
-                  right: right_node.left,
-                }),
-              right: right_node.right,
-            })
-          | _ =>
-            BinaryOperator({
-              loc: (
-                get_start(Ast.get_location(left)),
-                get_end(Ast.get_location(right)),
-              ),
-              kind: Int,
-              operator,
-              left,
-              right,
-            })
-          };
-        | [Number(loc, raw)] => Int({loc, kind: Int, raw})
-        | [token, ...rest] =>
-          raise(ParserError({loc: get_location(token), hint: None}))
-        | _ => raise(ParserError({loc: ((1, 1), (1, 1)), hint: None}))
-        }
-      )
-    )
-  );
-};
-
-let match_expressions = tokens => {
-  let rec tokens_until_semi = ts =>
-    switch (ts) {
-    | [] => ([], [])
-    | [Token.Semicolon(loc), ...rest] => ([], rest)
-    | [last] =>
-      raise(
-        ParserError({
-          loc: Token.get_location(last),
-          hint: Some("Missing Semicolon"),
-        }),
-      )
-    | [t, ...rest] =>
-      let (results, remaining) = tokens_until_semi(rest);
-      ([t, ...results], remaining);
-    };
-
-  let rec tokens_to_expressions = ts =>
-    switch (tokens_until_semi(ts)) {
-    | ([], []) => []
-    | (line, []) => [match_expression(line)]
-    | (line, remaining) => [
-        match_expression(line),
-        ...tokens_to_expressions(remaining),
-      ]
-    };
-
-  tokens_to_expressions(tokens);
-};
-
-let match_program = tokens => {
-  let body = match_expressions(tokens);
-  let rec loc_range =
-    Ast.(
-      statements =>
-        switch (statements) {
-        | [] => ((1, 1), (1, 1))
-        | [exp] => get_location(exp)
-        | [exp, ...rest] => (
-            {
-              let (start, _) = get_location(exp);
-              start;
-            },
-            {
-              let (_, finish) = loc_range(rest);
-              finish;
-            },
+let rec match_expression =
+  Ast.Expression.(
+    env => {
+      let exp =
+        switch (Env.peek(env)) {
+        | Number(loc, raw) =>
+          Env.eat(env);
+          Int({loc, raw, kind: Int});
+        | _ =>
+          raise(
+            ParserError({
+              loc: Env.location(env),
+              hint: Some("Unexpected start of expression"),
+            }),
           )
-        }
-    );
-  Ast.Program.{loc: loc_range(body), body, kind: Void};
+        };
+      switch (Env.peek(env)) {
+      | Semicolon(_) =>
+        Env.eat(env);
+        exp;
+      | Operator(loc, operator) =>
+        Env.eat(env);
+        let left = exp;
+        let right = match_expression(env);
+        switch (right) {
+        | BinaryOperator(right_node)
+            when
+              Token.precendence(right_node.operator)
+              < Token.precendence(operator) =>
+          BinaryOperator({
+            loc: (
+              get_start(Ast.get_location(left)),
+              get_end(Ast.get_location(right_node.right)),
+            ),
+            kind: Int,
+            operator: right_node.operator,
+            left:
+              BinaryOperator({
+                loc: (
+                  get_start(Ast.get_location(left)),
+                  get_end(Ast.get_location(right_node.left)),
+                ),
+                kind: Int,
+                operator,
+                left,
+                right: right_node.left,
+              }),
+            right: right_node.right,
+          })
+        | _ =>
+          BinaryOperator({
+            loc: (
+              get_start(Ast.get_location(left)),
+              get_end(Ast.get_location(right)),
+            ),
+            kind: Int,
+            operator,
+            left,
+            right,
+          })
+        };
+      | _ =>
+        raise(
+          ParserError({
+            loc: Env.location(env),
+            hint: Some("Unexpected token in expression"),
+          }),
+        )
+      };
+    }
+  );
+
+let match_program = env => {
+  let rec match_expressions = () => {
+    let exp = match_expression(env);
+    switch (Env.has_more_tokens(env)) {
+    | false => [exp]
+    | true => [exp, ...match_expressions()]
+    };
+  };
+  let (_, finish) = Env.location(env);
+  Ast.Program.{
+    loc: ((1, 1), finish),
+    body: match_expressions(),
+    kind: Void,
+  };
 };
 
 let parse = filename => {
@@ -250,7 +232,7 @@ let parse = filename => {
 
   switch (lexer_result) {
   | Success(tokens) =>
-    switch (match_program(tokens)) {
+    switch (match_program(Env.init(tokens))) {
     | program => Success(program)
     | exception (ParserError({hint, loc})) =>
       Failure({
