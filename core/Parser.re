@@ -68,6 +68,8 @@ let token_from_char =
         | ('0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') as num =>
           Some(Number(loc, Char.escaped(num)))
         | ';' => Some(Semicolon(loc))
+        | '{' => Some(LCurly(loc))
+        | '}' => Some(RCurly(loc))
         | ' '
         | '\n' => None
         | x => raise(LexerError({loc, raw: Char.escaped(x), hint: None}))
@@ -133,6 +135,28 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
+        | LCurly((start, _)) =>
+          Env.eat(env);
+          let rec match_expressions = () => {
+            let exp = match_expression(env);
+            switch (Env.peek(env)) {
+            | RCurly(_) => [exp]
+            | _ => [exp, ...match_expressions()]
+            };
+          };
+          let expressions = match_expressions();
+          switch (Env.peek(env)) {
+          | RCurly((_, finish)) =>
+            Env.eat(env);
+            Block({loc: (start, finish), expressions, kind: Var});
+          | _ =>
+            raise(
+              ParserError({
+                loc: Env.location(env),
+                hint: Some("Expected \"}\" at end of block expression"),
+              }),
+            )
+          };
         | _ =>
           raise(
             ParserError({

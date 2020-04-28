@@ -22,11 +22,15 @@ let precendence = op =>
 type case =
   | Number(location, raw)
   | Operator(location, operator)
-  | Semicolon(location);
+  | Semicolon(location)
+  | LCurly(location)
+  | RCurly(location);
 
 let get_location = case =>
   switch (case) {
   | Number(loc, _)
   | Operator(loc, _)
+  | LCurly(loc)
+  | RCurly(loc)
   | Semicolon(loc) => loc
   };
