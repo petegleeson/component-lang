@@ -70,6 +70,8 @@ let token_from_char =
         | ';' => Some(Semicolon(loc))
         | '{' => Some(LCurly(loc))
         | '}' => Some(RCurly(loc))
+        | '(' => Some(LParen(loc))
+        | ')' => Some(RParen(loc))
         | ' '
         | '\n' => None
         | x => raise(LexerError({loc, raw: Char.escaped(x), hint: None}))
@@ -135,28 +137,29 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
-        | LCurly((start, _)) =>
+        | LCurly(_) => Block(match_block(env))
+        | LParen((start, _)) =>
           Env.eat(env);
-          let rec match_expressions = () => {
-            let exp = match_expression(env);
+          let params =
             switch (Env.peek(env)) {
-            | RCurly(_) => [exp]
-            | _ => [exp, ...match_expressions()]
+            | RParen(_) =>
+              Env.eat(env);
+              [];
+            | _ =>
+              raise(
+                ParserError({
+                  loc: Env.location(env),
+                  hint: Some("Unexpected function parameter definition"),
+                }),
+              )
             };
-          };
-          let expressions = match_expressions();
-          switch (Env.peek(env)) {
-          | RCurly((_, finish)) =>
-            Env.eat(env);
-            Block({loc: (start, finish), expressions, kind: Var});
-          | _ =>
-            raise(
-              ParserError({
-                loc: Env.location(env),
-                hint: Some("Expected \"}\" at end of block expression"),
-              }),
-            )
-          };
+          let body = match_block(env);
+          Function({
+            loc: (start, Source.get_end(body.loc)),
+            kind: Var,
+            params,
+            body,
+          });
         | _ =>
           raise(
             ParserError({
@@ -219,7 +222,31 @@ let rec match_expression =
         )
       };
     }
-  );
+  )
+and match_block = env => {
+  let (start, _) = Env.location(env);
+  Env.eat(env);
+  let rec match_expressions = () => {
+    let exp = match_expression(env);
+    switch (Env.peek(env)) {
+    | RCurly(_) => [exp]
+    | _ => [exp, ...match_expressions()]
+    };
+  };
+  let expressions = match_expressions();
+  switch (Env.peek(env)) {
+  | RCurly((_, finish)) =>
+    Env.eat(env);
+    Ast.Block.{loc: (start, finish), expressions, kind: Var};
+  | _ =>
+    raise(
+      ParserError({
+        loc: Env.location(env),
+        hint: Some("Expected \"}\" at end of block expression"),
+      }),
+    )
+  };
+};
 
 let match_program = env => {
   let rec match_expressions = () => {

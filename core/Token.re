@@ -24,7 +24,9 @@ type case =
   | Operator(location, operator)
   | Semicolon(location)
   | LCurly(location)
-  | RCurly(location);
+  | RCurly(location)
+  | LParen(location)
+  | RParen(location);
 
 let get_location = case =>
   switch (case) {
@@ -32,5 +34,7 @@ let get_location = case =>
   | Operator(loc, _)
   | LCurly(loc)
   | RCurly(loc)
+  | LParen(loc)
+  | RParen(loc)
   | Semicolon(loc) => loc
   };

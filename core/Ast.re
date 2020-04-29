@@ -26,9 +26,18 @@ and Block: {
 and Expression: {
   type t =
     | BinaryOperator(BinaryOperator.t)
-    | Int(Int.t)
-    | Block(Block.t);
+    | Block(Block.t)
+    | Function(Function.t)
+    | Int(Int.t);
 } = Expression
+and Function: {
+  type t = {
+    loc: location,
+    params: list(Expression.t),
+    body: Block.t,
+    kind,
+  };
+} = Function
 and Int: {
   type t = {
     loc: location,
@@ -75,6 +84,18 @@ let rec show_expression =
             expressions,
           ),
         )
+      | Function({loc, kind, params, body}) =>
+        Format.sprintf(
+          "@[<2>Function.{@ loc: %s@ kind: %s@ params: [@ %s ]@ body: %s@ }@]@.",
+          Source.show_location(loc),
+          show_kind(kind),
+          List.fold_left(
+            (res, exp) => res ++ show_expression(exp) ++ ", ",
+            "",
+            params,
+          ),
+          show_expression(Block(body)),
+        )
       }
   );
 
@@ -93,41 +114,13 @@ let show_program =
       )
   );
 
-// let loc = ((1, 1), (1, 1));
-
-// let myInt = Expression.Int({loc, raw: "1", kind: Int});
-
-// print_endline(
-//   show_expression(
-//     Expression.Block({
-//       loc,
-//       kind: Var,
-//       expressions: [
-//         Expression.BinaryOperator({
-//           loc,
-//           kind: Int,
-//           operator: Plus,
-//           left: myInt,
-//           right: myInt,
-//         }),
-//         Expression.BinaryOperator({
-//           loc,
-//           kind: Int,
-//           operator: Plus,
-//           left: myInt,
-//           right: myInt,
-//         }),
-//       ],
-//     }),
-//   ),
-// );
-
 let get_location =
   Expression.(
     expression =>
       switch (expression) {
-      | Int({loc}) => loc
-      | Block({loc}) => loc
+      | Int({loc})
+      | Block({loc})
+      | Function({loc})
       | BinaryOperator({loc}) => loc
       }
   );
