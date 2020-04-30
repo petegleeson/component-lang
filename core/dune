@@ -3,4 +3,4 @@
   (flags (-w -40 -w +26))
   (preprocess (pps ppx_deriving.show))
   (public_name component-lang)
-  (libraries pastel.lib file-context-printer.lib))
+  (libraries pastel.lib file-context-printer.lib llvm))

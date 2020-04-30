@@ -5,11 +5,16 @@
   "license": "MIT",
   "esy": {
     "build": "dune build -p #{self.name}",
-    "buildDev":
-      "refmterr dune build --promote-install-files --root . --only-package #{self.name}",
+    "buildDev": "refmterr dune build --promote-install-files --root . --only-package #{self.name}",
     "NOTE": "Optional release Section. Customizes result of `esy release`",
-    "release": { "bin": [ "component-lang-compiler" ] },
-    "buildEnv": { "ODOC_SYNTAX": "re" }
+    "release": {
+      "bin": [
+        "component-lang-compiler"
+      ]
+    },
+    "buildEnv": {
+      "ODOC_SYNTAX": "re"
+    }
   },
   "scripts": {
     "test": "esy x component_lang_compiler",
@@ -18,6 +23,7 @@
   "dependencies": {
     "@esy-ocaml/reason": ">= 3.4.0 < 3.6.0",
     "@opam/dune": "*",
+    "@opam/llvm": "10.0.0",
     "@opam/ppx_deriving": "^4.4.1",
     "@reason-native/console": "*",
     "@reason-native/file-context-printer": "^0.0.3",
@@ -27,7 +33,7 @@
   "devDependencies": {
     "@opam/merlin": "*",
     "@reason-native/rely": "*",
-    "refmterr": "*",
+    "refmterr": "3.3.0",
     "ocaml": "~4.8.1000",
     "@opam/odoc": "*"
   }
