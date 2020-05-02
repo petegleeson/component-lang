@@ -49,7 +49,14 @@ let rec gen_expression = expr => {
           ();
         };
         fn;
-      | _ => raise(Error("don't know how to code gen this"))
+      | Block({expressions}) =>
+        let rec gen_last_expr = exprs =>
+          // @Incomplete will only generate last expression in fn
+          switch (exprs) {
+          | [expr] => gen_expression(expr)
+          | [expr, ...rest] => gen_last_expr(rest)
+          };
+        gen_last_expr(expressions);
       };
     }
   );
