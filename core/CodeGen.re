@@ -90,4 +90,38 @@ let gen_program =
     }
   );
 
+// this is sad for a number of reasons:
+// - I can't figure out how to generate runnable WASM in one go
+// - I can't generate any WASM without initializing all the backends (slow!)
+// - I had to edit the install.sh file in llvm so the WASM backend was installed
+let build_program =
+  Program.(
+    filename => {
+      ()// Llvm_all_backends.initialize();
+        // // Llvm_WebAssembly.initialize();
+        // // print_endline(
+        // //   switch (Llvm_target.Target.first()) {
+        // //   | Some(target) => Llvm_target.Target.name(target)
+        // //   | None => ""
+        // //   },
+        // // );
+        // // List.iter(
+        // //   x => print_endline(Llvm_target.Target.name(x)),
+        // //   Llvm_target.Target.all(),
+        // // );
+        // let machine =
+        //   Llvm_target.TargetMachine.create(
+        //     ~triple="wasm32",
+        //     Llvm_target.Target.by_triple("wasm32"),
+        //   );
+        // Llvm_target.TargetMachine.emit_to_file(
+        //   the_module,
+        //   AssemblyFile,
+        //   filename,
+        //   machine,
+        ;
+        // );
+    }
+  );
+
 let show_program = () => dump_module(the_module);
