@@ -24,18 +24,30 @@ let rec gen_expression = expr => {
         | Divide => build_sdiv(left_val, right_val, "divtemp", builder)
         };
       | Function({params, body}) =>
+        let rec gen_last_expr = exprs =>
+          switch (exprs) {
+          | [] => None
+          | [expr] => Some(gen_expression(expr))
+          | [expr, ...rest] => gen_last_expr(rest)
+          };
+
+        // declare fn
         let fn =
           declare_function("", function_type(int_type, [||]), the_module);
+
+        // generate body
         let bb = append_block(context, "entry", fn);
-        position_at_end(bb, builder);
         // @Incomplete will only generate last expression in fn
-        let rec gen_ret = exprs =>
-          switch (exprs) {
-          | [] => build_ret_void
-          | [expr] => build_ret(gen_expression(expr))
-          | [expr, ...rest] => gen_ret(rest)
-          };
-        gen_ret(body.expressions, builder);
+        let maybe_llval = gen_last_expr(body.expressions);
+        position_at_end(bb, builder);
+        switch (maybe_llval) {
+        | Some(llval) =>
+          build_ret(llval, builder);
+          ();
+        | None =>
+          build_ret_void(builder);
+          ();
+        };
         fn;
       | _ => raise(Error("don't know how to code gen this"))
       };
