@@ -18,7 +18,10 @@
   },
   "scripts": {
     "test": "esy x component_lang_compiler",
-    "doc": "esy dune build @doc"
+    "doc": "esy dune build @doc",
+    "llc": "/usr/local/Cellar/llvm/10.0.0_3/bin/llc -march=wasm32 -filetype=obj",
+    "link": "/usr/local/Cellar/llvm/10.0.0_3/bin/wasm-ld --no-entry --export-all -o",
+    "run": "node run-wasm.js"
   },
   "dependencies": {
     "@esy-ocaml/reason": ">= 3.4.0 < 3.6.0",
