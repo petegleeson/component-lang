@@ -21,6 +21,8 @@ let precendence = op =>
 [@deriving show]
 type case =
   | Number(location, raw)
+  | Let(location)
+  | Equals(location)
   | Identifier(location, raw)
   | Operator(location, operator)
   | Semicolon(location)
@@ -34,6 +36,8 @@ let get_location = case =>
   | Number(loc, _)
   | Identifier(loc, _)
   | Operator(loc, _)
+  | Equals(loc)
+  | Let(loc)
   | LCurly(loc)
   | RCurly(loc)
   | LParen(loc)

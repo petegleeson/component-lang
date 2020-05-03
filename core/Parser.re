@@ -110,8 +110,9 @@ let token_from_char =
             'Y' |
             'z' |
             'Z'
-          ) as num =>
-          Some(Identifier(loc, Char.escaped(num)))
+          ) as c =>
+          Some(Identifier(loc, Char.escaped(c)))
+        | '=' => Some(Equals(loc))
         | ';' => Some(Semicolon(loc))
         | '{' => Some(LCurly(loc))
         | '}' => Some(RCurly(loc))
@@ -149,7 +150,19 @@ let tokenise =
                    Some(Identifier((_, finish), x)),
                    Some(Identifier((start, _), y)),
                  ) => (
-                   Some(Identifier((start, finish), y ++ x)),
+                   Some(
+                     switch (y ++ x) {
+                     | "let" => Let((start, finish))
+                     | _ => Identifier((start, finish), y ++ x)
+                     },
+                   ),
+                   tokens,
+                 )
+               | (
+                   Some(Identifier((_, finish), x)),
+                   Some(Let((start, _))),
+                 ) => (
+                   Some(Identifier((start, finish), "let" ++ x)),
                    tokens,
                  )
                | (Some(t), Some(pt)) => (Some(t), [pt, ...tokens])
@@ -189,9 +202,7 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
-        | Identifier(loc, name) =>
-          Env.eat(env);
-          Identifier({loc, name, kind: Var});
+        | Identifier(loc, name) => Identifier(match_identifier(env))
         | LCurly(_) => Block(match_block(env))
         | LParen((start, _)) =>
           Env.eat(env);
@@ -281,14 +292,14 @@ let rec match_expression =
 and match_block = env => {
   let (start, _) = Env.location(env);
   Env.eat(env);
-  let rec match_expressions = () => {
-    let exp = match_expression(env);
+  let rec match_statements = () => {
+    let exp = match_statement(env);
     switch (Env.peek(env)) {
     | RCurly(_) => [exp]
-    | _ => [exp, ...match_expressions()]
+    | _ => [exp, ...match_statements()]
     };
   };
-  let expressions = match_expressions();
+  let expressions = match_statements();
   switch (Env.peek(env)) {
   | RCurly((_, finish)) =>
     Env.eat(env);
@@ -301,22 +312,58 @@ and match_block = env => {
       }),
     )
   };
-};
+}
+and match_identifier = env => {
+  switch (Env.peek(env)) {
+  | Identifier(loc, name) =>
+    Env.eat(env);
+    Ast.Identifier.{loc, name, kind: Var};
+  | _ =>
+    raise(
+      ParserError({
+        loc: Env.location(env),
+        hint: Some("Expected an identifier"),
+      }),
+    )
+  };
+}
+and match_declaration = env => {
+  switch (Env.peek(env)) {
+  | Let((start, _)) =>
+    Env.eat(env);
+    let id = match_identifier(env);
+    Env.eat(env); // @Improve expect "="
+    let value = match_expression(env);
+    Ast.Declaration.{
+      loc: (start, Source.get_end(Ast.get_location(value))),
+      kind: Void,
+      id,
+      value,
+    };
+  | _ =>
+    raise(
+      ParserError({
+        loc: Env.location(env),
+        hint: Some("Declarations must start with the \"let\" keyword"),
+      }),
+    )
+  };
+} and match_statement = Ast.Statement.(env => switch(Env.peek(env)){
+  | Let(_) => Declaration(match_declaration(env))
+  | _ => Expression(match_expression(env))
+});
 
 let match_program = env => {
-  let rec match_expressions = () => {
-    let exp = match_expression(env);
-    switch (Env.has_more_tokens(env)) {
-    | false => [exp]
-    | true => [exp, ...match_expressions()]
+  // @Note making this function tail call optimised causes an infinite loop
+  let rec match_statements = () =>
+    if (Env.has_more_tokens(env)) {
+      let stmt = match_statement(env);
+      [stmt, ...match_statements()];
+    } else {
+      [];
     };
-  };
   let (_, finish) = Env.location(env);
-  Ast.Program.{
-    loc: ((1, 1), finish),
-    body: match_expressions(),
-    kind: Void,
-  };
+  Ast.Program.{loc: ((1, 1), finish), body: match_statements(), kind: Void};
 };
 
 let parse = filename => {

@@ -19,10 +19,18 @@ module rec BinaryOperator: {
 and Block: {
   type t = {
     loc: location,
-    expressions: list(Expression.t),
+    expressions: list(Statement.t),
     kind,
   };
 } = Block
+and Declaration: {
+  type t = {
+    loc: location,
+    id: Identifier.t,
+    value: Expression.t,
+    kind,
+  };
+} = Declaration
 and Identifier: {
   type t = {
     loc: location,
@@ -53,10 +61,15 @@ and Int: {
     kind,
   };
 } = Int
+and Statement: {
+  type t =
+    | Expression(Expression.t)
+    | Declaration(Declaration.t);
+} = Statement
 and Program: {
   type t = {
     loc: location,
-    body: list(Expression.t),
+    body: list(Statement.t),
     kind,
   };
 } = Program;
@@ -94,7 +107,7 @@ let rec show_expression =
           Source.show_location(loc),
           show_kind(kind),
           List.fold_left(
-            (res, exp) => res ++ show_expression(exp) ++ ", ",
+            (res, exp) => res ++ show_statement(exp) ++ ", ",
             "",
             expressions,
           ),
@@ -112,6 +125,25 @@ let rec show_expression =
           show_expression(Block(body)),
         )
       }
+  )
+and show_declaration =
+  Declaration.(
+    ({loc, kind, id, value}) =>
+      Format.sprintf(
+        "@[<2>Declaration.{@ loc: %s@ kind: %s@ id: %s@ value: %s@ }@]@.",
+        Source.show_location(loc),
+        show_kind(kind),
+        show_expression(Identifier(id)),
+        show_expression(value),
+      )
+  )
+and show_statement =
+  Statement.(
+    stmt =>
+      switch (stmt) {
+      | Expression(expr) => show_expression(expr)
+      | Declaration(decl) => show_declaration(decl)
+      }
   );
 
 let show_program =
@@ -122,7 +154,7 @@ let show_program =
         Source.show_location(loc),
         show_kind(kind),
         List.fold_left(
-          (res, exp) => res ++ show_expression(exp) ++ ", ",
+          (res, stmt) => res ++ show_statement(stmt) ++ ", ",
           "",
           body,
         ),

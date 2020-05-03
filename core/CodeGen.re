@@ -27,7 +27,7 @@ let rec gen_expression = expr => {
         let rec gen_last_expr = exprs =>
           switch (exprs) {
           | [] => None
-          | [expr] => Some(gen_expression(expr))
+          | [Ast.Statement.Expression(expr)] => Some(gen_expression(expr))
           | [expr, ...rest] => gen_last_expr(rest)
           };
 
@@ -53,7 +53,7 @@ let rec gen_expression = expr => {
         let rec gen_last_expr = exprs =>
           // @Incomplete will only generate last expression in fn
           switch (exprs) {
-          | [expr] => gen_expression(expr)
+          | [Ast.Statement.Expression(expr)] => gen_expression(expr)
           | [expr, ...rest] => gen_last_expr(rest)
           };
         gen_last_expr(expressions);
@@ -81,7 +81,7 @@ let gen_program =
       let rec gen_body = exprs => {
         switch (exprs) {
         | [] => ()
-        | [expr, ...rest] =>
+        | [Ast.Statement.Expression(expr), ...rest] =>
           gen_expression(expr);
           gen_body(rest);
         };
@@ -97,8 +97,7 @@ let gen_program =
 let build_program =
   Program.(
     filename => {
-      ()// Llvm_all_backends.initialize();
-        // // Llvm_WebAssembly.initialize();
+      ()// // Llvm_WebAssembly.initialize();
         // // print_endline(
         // //   switch (Llvm_target.Target.first()) {
         // //   | Some(target) => Llvm_target.Target.name(target)
@@ -119,7 +118,7 @@ let build_program =
         //   AssemblyFile,
         //   filename,
         //   machine,
-        ;
+        ; // Llvm_all_backends.initialize();
         // );
     }
   );
