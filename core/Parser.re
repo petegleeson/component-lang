@@ -112,6 +112,7 @@ let token_from_char =
             'Z'
           ) as c =>
           Some(Identifier(loc, Char.escaped(c)))
+        | ',' => Some(Comma(loc))
         | '=' => Some(Equals(loc))
         | ';' => Some(Semicolon(loc))
         | '{' => Some(LCurly(loc))
@@ -206,19 +207,18 @@ let rec match_expression =
         | LCurly(_) => Block(match_block(env))
         | LParen((start, _)) =>
           Env.eat(env);
-          let params =
+          let rec match_params = () =>
             switch (Env.peek(env)) {
             | RParen(_) =>
               Env.eat(env);
               [];
-            | _ =>
-              raise(
-                ParserError({
-                  loc: Env.location(env),
-                  hint: Some("Unexpected function parameter definition"),
-                }),
-              )
+            | Comma(_) => 
+              Env.eat(env);
+              [match_identifier(env), ...match_params()];
+            | _ => 
+              [match_identifier(env), ...match_params()];
             };
+          let params = match_params();
           let body = match_block(env);
           Function({
             loc: (start, Source.get_end(body.loc)),

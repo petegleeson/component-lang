@@ -49,7 +49,7 @@ and Expression: {
 and Function: {
   type t = {
     loc: location,
-    params: list(Expression.t),
+    params: list(Identifier.t),
     body: Block.t,
     kind,
   };
@@ -85,13 +85,7 @@ let rec show_expression =
           show_kind(kind),
           raw,
         )
-      | Identifier({loc, kind, name}) =>
-        Format.sprintf(
-          "@[<2>Identifier.{@ loc: %s@ kind: %s@ name: \"%s\"@ }@]@.",
-          Source.show_location(loc),
-          show_kind(kind),
-          name,
-        )
+      | Identifier(id) => show_identifier(id)
       | BinaryOperator({loc, kind, operator, left, right}) =>
         Format.sprintf(
           "@[<2>BinOp.{@ loc: %s@ kind: %s@ operator: %s@ left: %s@ right: %s@ }@]@.",
@@ -118,7 +112,7 @@ let rec show_expression =
           Source.show_location(loc),
           show_kind(kind),
           List.fold_left(
-            (res, exp) => res ++ show_expression(exp) ++ ", ",
+            (res, exp) => res ++ show_identifier(exp) ++ ", ",
             "",
             params,
           ),
@@ -144,7 +138,15 @@ and show_statement =
       | Expression(expr) => show_expression(expr)
       | Declaration(decl) => show_declaration(decl)
       }
-  );
+  )
+and show_identifier = Identifier.(({loc, kind, name}) =>
+  Format.sprintf(
+    "@[<2>Identifier.{@ loc: %s@ kind: %s@ name: \"%s\"@ }@]@.",
+    Source.show_location(loc),
+    show_kind(kind),
+    name,
+  )
+);
 
 let show_program =
   Program.(
