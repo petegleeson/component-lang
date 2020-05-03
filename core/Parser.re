@@ -214,9 +214,11 @@ let rec match_expression =
               [];
             | Comma(_) => 
               Env.eat(env);
-              [match_identifier(env), ...match_params()];
+              let param = match_identifier(env);
+              [param, ...match_params()];
             | _ => 
-              [match_identifier(env), ...match_params()];
+              let param = match_identifier(env);
+              [param, ...match_params()];
             };
           let params = match_params();
           let body = match_block(env);
