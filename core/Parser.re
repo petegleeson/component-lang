@@ -195,6 +195,16 @@ exception
     hint: option(string),
   });
 
+let match_semicolon = env => switch(Env.peek(env)) {
+  | Semicolon(_) => Env.eat(env)
+  | _ => raise(
+          ParserError({
+            loc: Env.location(env),
+            hint: Some("Expected a semi-colon"),
+          }),
+        )
+}
+
 let rec match_expression =
   Ast.Expression.(
     env => {
@@ -203,7 +213,11 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
-        | Identifier(loc, name) => Identifier(match_identifier(env))
+        | Identifier(loc, name) => switch(Env.lookahead_one(env)) {
+          | Some(LParen(_)) => match_apply(env)
+          | Some(_)
+          | None => Identifier(match_identifier(env))
+          }
         | LCurly(_) => Block(match_block(env))
         | LParen((start, _)) =>
           Env.eat(env);
@@ -237,9 +251,6 @@ let rec match_expression =
           )
         };
       switch (Env.peek(env)) {
-      | Semicolon(_) =>
-        Env.eat(env);
-        exp;
       | Operator(loc, operator) =>
         Env.eat(env);
         let left = exp;
@@ -281,13 +292,7 @@ let rec match_expression =
             right,
           })
         };
-      | _ =>
-        raise(
-          ParserError({
-            loc: Env.location(env),
-            hint: Some("Unexpected token in expression"),
-          }),
-        )
+      | _ => exp;
       };
     }
   )
@@ -350,10 +355,40 @@ and match_declaration = env => {
       }),
     )
   };
-} and match_statement = Ast.Statement.(env => switch(Env.peek(env)){
+} and match_statement = Ast.Statement.(env => {
+  let stmt = switch(Env.peek(env)){
   | Let(_) => Declaration(match_declaration(env))
   | _ => Expression(match_expression(env))
-});
+  }
+  match_semicolon(env);
+  stmt;
+}) and match_apply = Ast.Apply.(env => {
+  let func = match_identifier(env);
+  Env.eat(env); // @Improve expect "("
+  let rec match_args = () =>
+    switch (Env.peek(env)) {
+    | RParen((_, finish)) =>
+      Env.eat(env);
+      ([], finish);
+    | Comma(_) => 
+      Env.eat(env);
+      let param = match_expression(env);
+      let (rest, _) = match_args();
+      ([param, ...rest], Source.get_end(Ast.get_location(param)))
+    | _ => 
+      let param = match_expression(env);
+      let (rest, _) = match_args();
+      ([param, ...rest], Source.get_end(Ast.get_location(param)))
+    };
+  let (args, finish) = match_args();
+  Apply({
+    loc: (Source.get_start(func.loc), finish),
+    kind: Var,
+    args,
+    func,
+  });
+
+})
 
 let match_program = env => {
   // @Note making this function tail call optimised causes an infinite loop

@@ -7,7 +7,15 @@ type kind =
   | Var
   | Void;
 
-module rec BinaryOperator: {
+module rec Apply: {
+  type t = {
+    loc: location,
+    kind,
+    func: Identifier.t,
+    args: list(Expression.t),
+  };
+} = Apply
+and BinaryOperator: {
   type t = {
     loc: location,
     operator: Token.operator,
@@ -40,6 +48,7 @@ and Identifier: {
 } = Identifier
 and Expression: {
   type t =
+    | Apply(Apply.t)
     | BinaryOperator(BinaryOperator.t)
     | Block(Block.t)
     | Identifier(Identifier.t)
@@ -78,6 +87,18 @@ let rec show_expression =
   Expression.(
     exp =>
       switch (exp) {
+      | Apply({loc, kind, func, args}) =>
+        Format.sprintf(
+          "@[<2>Apply.{@ loc: %s@ kind: %s@ func: %s@ args: [@ %s ]@ }@]@.",
+          Source.show_location(loc),
+          show_kind(kind),
+          show_identifier(func),
+          List.fold_left(
+            (res, exp) => res ++ show_expression(exp) ++ ", ",
+            "",
+            args,
+          ),
+        )
       | Int({loc, kind, raw}) =>
         Format.sprintf(
           "@[<2>Int.{@ loc: %s@ kind: %s@ raw: \"%s\"@ }@]@.",
@@ -167,6 +188,7 @@ let get_location =
   Expression.(
     expression =>
       switch (expression) {
+      | Apply({loc})
       | Int({loc})
       | Block({loc})
       | Function({loc})

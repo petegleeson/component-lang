@@ -46,3 +46,9 @@ let expect = ({tokens}, fn) => {
 };
 
 let location = env => env |> peek |> Token.get_location;
+
+let lookahead_one = ({tokens}) => switch(tokens^) {
+  | [] => None
+  | [_] => None
+  | [_, lh, ...rest] => Some(lh)
+}
