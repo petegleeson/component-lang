@@ -67,6 +67,51 @@ let token_from_char =
           )
         | ('0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9') as num =>
           Some(Number(loc, Char.escaped(num)))
+        | (
+            'a' | 'A' | 'b' | 'B' | 'c' | 'C' | 'd' | 'D' | 'e' | 'E' | 'f' |
+            'F' |
+            'g' |
+            'G' |
+            'h' |
+            'H' |
+            'i' |
+            'I' |
+            'j' |
+            'J' |
+            'k' |
+            'K' |
+            'l' |
+            'L' |
+            'm' |
+            'M' |
+            'n' |
+            'N' |
+            'o' |
+            'O' |
+            'p' |
+            'P' |
+            'q' |
+            'Q' |
+            'r' |
+            'R' |
+            's' |
+            'S' |
+            't' |
+            'T' |
+            'u' |
+            'U' |
+            'v' |
+            'V' |
+            'w' |
+            'W' |
+            'x' |
+            'X' |
+            'y' |
+            'Y' |
+            'z' |
+            'Z'
+          ) as num =>
+          Some(Identifier(loc, Char.escaped(num)))
         | ';' => Some(Semicolon(loc))
         | '{' => Some(LCurly(loc))
         | '}' => Some(RCurly(loc))
@@ -98,6 +143,13 @@ let tokenise =
                    Some(Number((start, _), y)),
                  ) => (
                    Some(Number((start, finish), y ++ x)),
+                   tokens,
+                 )
+               | (
+                   Some(Identifier((_, finish), x)),
+                   Some(Identifier((start, _), y)),
+                 ) => (
+                   Some(Identifier((start, finish), y ++ x)),
                    tokens,
                  )
                | (Some(t), Some(pt)) => (Some(t), [pt, ...tokens])
@@ -137,6 +189,9 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
+        | Identifier(loc, name) =>
+          Env.eat(env);
+          Identifier({loc, name, kind: Var});
         | LCurly(_) => Block(match_block(env))
         | LParen((start, _)) =>
           Env.eat(env);

@@ -23,10 +23,18 @@ and Block: {
     kind,
   };
 } = Block
+and Identifier: {
+  type t = {
+    loc: location,
+    name: string,
+    kind,
+  };
+} = Identifier
 and Expression: {
   type t =
     | BinaryOperator(BinaryOperator.t)
     | Block(Block.t)
+    | Identifier(Identifier.t)
     | Function(Function.t)
     | Int(Int.t);
 } = Expression
@@ -63,6 +71,13 @@ let rec show_expression =
           Source.show_location(loc),
           show_kind(kind),
           raw,
+        )
+      | Identifier({loc, kind, name}) =>
+        Format.sprintf(
+          "@[<2>Identifier.{@ loc: %s@ kind: %s@ name: \"%s\"@ }@]@.",
+          Source.show_location(loc),
+          show_kind(kind),
+          name,
         )
       | BinaryOperator({loc, kind, operator, left, right}) =>
         Format.sprintf(
@@ -121,6 +136,7 @@ let get_location =
       | Int({loc})
       | Block({loc})
       | Function({loc})
+      | Identifier({loc})
       | BinaryOperator({loc}) => loc
       }
   );

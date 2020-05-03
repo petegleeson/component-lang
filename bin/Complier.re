@@ -3,8 +3,7 @@ switch (Sys.argv) {
   let parse_result = Component_lang_core.Parser.parse(filename);
   switch (parse_result) {
   | Success(program) =>
-    Component_lang_core.CodeGen.gen_program(program);
-    Component_lang_core.CodeGen.show_program();
+    Console.log(Component_lang_core.Ast.show_program(program))
   | Failure(err) =>
     err |> Component_lang_core.Error.error_message |> Console.log
   };
