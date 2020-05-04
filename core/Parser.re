@@ -1,6 +1,13 @@
 open Source;
 
-module Env {
+exception
+  ParserError({
+    loc: location,
+    hint: option(string),
+  });
+
+
+module Env = {
   type t = {tokens: ref(list(Token.case))};
 
   let init = tokens => {
@@ -44,34 +51,34 @@ module Env {
       );
   };
 
-  let expect = ({tokens}, fn) => {
-    fn(peek({tokens: tokens})) ? eat({tokens: tokens}) : ();
-  };
-
   let location = env => env |> peek |> Token.get_location;
 
-  let lookahead_one = ({tokens}) => switch(tokens^) {
+  let expect = (fn, env) => {
+    switch(fn(peek(env))) {
+      | Ok(res) => eat(env); res;
+      | Error(msg) => raise(ParserError({ loc: location(env), hint: msg }))
+    }
+  };
+
+  let lookahead_one = ({tokens}) =>
+    switch (tokens^) {
     | [] => None
     | [_] => None
     | [_, lh, ...rest] => Some(lh)
-  };
+    };
 };
 
-exception
-  ParserError({
-    loc: location,
-    hint: option(string),
-  });
-
-let match_semicolon = env => switch(Env.peek(env)) {
+let match_semicolon = env =>
+  switch (Env.peek(env)) {
   | Semicolon(_) => Env.eat(env)
-  | _ => raise(
-          ParserError({
-            loc: Env.location(env),
-            hint: Some("Expected a semi-colon"),
-          }),
-        )
-}
+  | _ =>
+    raise(
+      ParserError({
+        loc: Env.location(env),
+        hint: Some("Expected a semi-colon"),
+      }),
+    )
+  };
 
 let rec match_expression =
   Ast.Expression.(
@@ -81,7 +88,8 @@ let rec match_expression =
         | Number(loc, raw) =>
           Env.eat(env);
           Int({loc, raw, kind: Int});
-        | Identifier(loc, name) => switch(Env.lookahead_one(env)) {
+        | Identifier(loc, name) =>
+          switch (Env.lookahead_one(env)) {
           | Some(LParen(_)) => match_apply(env)
           | Some(_)
           | None => Identifier(match_identifier(env))
@@ -94,11 +102,11 @@ let rec match_expression =
             | RParen(_) =>
               Env.eat(env);
               [];
-            | Comma(_) => 
+            | Comma(_) =>
               Env.eat(env);
               let param = match_identifier(env);
               [param, ...match_params()];
-            | _ => 
+            | _ =>
               let param = match_identifier(env);
               [param, ...match_params()];
             };
@@ -160,13 +168,18 @@ let rec match_expression =
             right,
           })
         };
-      | _ => exp;
+      | _ => exp
       };
     }
   )
 and match_block = env => {
   let (start, _) = Env.location(env);
-  Env.eat(env);
+  Env.expect(
+    fun
+    | Token.LCurly(_) => Ok()
+    | _ => Error(Some("Blocks to start with a \"{\"")),
+    env
+  );
   let rec match_statements = () => {
     let exp = match_statement(env);
     switch (Env.peek(env)) {
@@ -189,25 +202,24 @@ and match_block = env => {
   };
 }
 and match_identifier = env => {
-  switch (Env.peek(env)) {
-  | Identifier(loc, name) =>
-    Env.eat(env);
-    Ast.Identifier.{loc, name, kind: Var};
-  | _ =>
-    raise(
-      ParserError({
-        loc: Env.location(env),
-        hint: Some("Expected an identifier"),
-      }),
-    )
-  };
+  Env.expect(
+    fun
+    | Identifier(loc, name) => Ok(Ast.Identifier.{loc, name, kind: Var})
+    | _ => Error(Some("Expected a variable")),
+    env
+  );
 }
 and match_declaration = env => {
   switch (Env.peek(env)) {
   | Let((start, _)) =>
     Env.eat(env);
     let id = match_identifier(env);
-    Env.eat(env); // @Improve expect "="
+    Env.expect(
+      fun
+      | Token.Equals(_) => Ok()
+      | _ => Error(Some("Expected \"=\" after the variable name")),
+      env
+    );
     let value = match_expression(env);
     Ast.Declaration.{
       loc: (start, Source.get_end(Ast.get_location(value))),
@@ -223,40 +235,58 @@ and match_declaration = env => {
       }),
     )
   };
-} and match_statement = Ast.Statement.(env => {
-  let stmt = switch(Env.peek(env)){
-  | Let(_) => Declaration(match_declaration(env))
-  | _ => Expression(match_expression(env))
-  }
-  match_semicolon(env);
-  stmt;
-}) and match_apply = Ast.Apply.(env => {
-  let func = match_identifier(env);
-  Env.eat(env); // @Improve expect "("
-  let rec match_args = () =>
-    switch (Env.peek(env)) {
-    | RParen((_, finish)) =>
-      Env.eat(env);
-      ([], finish);
-    | Comma(_) => 
-      Env.eat(env);
-      let param = match_expression(env);
-      let (rest, _) = match_args();
-      ([param, ...rest], Source.get_end(Ast.get_location(param)))
-    | _ => 
-      let param = match_expression(env);
-      let (rest, _) = match_args();
-      ([param, ...rest], Source.get_end(Ast.get_location(param)))
-    };
-  let (args, finish) = match_args();
-  Apply({
-    loc: (Source.get_start(func.loc), finish),
-    kind: Var,
-    args,
-    func,
-  });
-
-})
+}
+and match_statement =
+  Ast.Statement.(
+    env => {
+      let stmt =
+        switch (Env.peek(env)) {
+        | Let(_) => Declaration(match_declaration(env))
+        | _ => Expression(match_expression(env))
+        };
+      Env.expect(
+        fun
+        | Token.Semicolon(_) => Ok()
+        | _ => Error(Some("Expected a \";\" after statement")),
+        env
+      );
+      stmt;
+    }
+  )
+and match_apply =
+  Ast.Apply.(
+    env => {
+      let func = match_identifier(env);
+      Env.expect(
+        fun
+        | Token.LParen(_) => Ok()
+        | _ => Error(Some("Expected \"(\" after function variable")),
+        env
+      );
+      let rec match_args = () =>
+        switch (Env.peek(env)) {
+        | RParen((_, finish)) =>
+          Env.eat(env);
+          ([], finish);
+        | Comma(_) =>
+          Env.eat(env);
+          let param = match_expression(env);
+          let (rest, _) = match_args();
+          ([param, ...rest], Source.get_end(Ast.get_location(param)));
+        | _ =>
+          let param = match_expression(env);
+          let (rest, _) = match_args();
+          ([param, ...rest], Source.get_end(Ast.get_location(param)));
+        };
+      let (args, finish) = match_args();
+      Apply({
+        loc: (Source.get_start(func.loc), finish),
+        kind: Var,
+        args,
+        func,
+      });
+    }
+  );
 
 let match_program = env => {
   // @Note making this function tail call optimised causes an infinite loop
@@ -275,13 +305,15 @@ let parse = (filename, tokens) => {
   switch (match_program(Env.init(tokens))) {
   | program => Ok(program)
   | exception (ParserError({hint, loc})) =>
-    Error(Error.{
-      title: "A syntax error prevented compilation",
-      detail: "Character",
-      stage: Parsing,
-      filename,
-      hint,
-      loc,
-    })
-  }
+    Error(
+      Error.{
+        title: "A syntax error prevented compilation",
+        detail: "Character",
+        stage: Parsing,
+        filename,
+        hint,
+        loc,
+      },
+    )
+  };
 };
