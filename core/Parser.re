@@ -6,12 +6,17 @@ exception
     hint: option(string),
   });
 
-
 module Env = {
-  type t = {tokens: ref(list(Token.case))};
+  type t = {
+    tokens: ref(list(Token.case)),
+    scope: ref(Ast.Scope.t),
+  };
 
   let init = tokens => {
-    {tokens: ref(tokens)};
+    {
+      tokens: ref(tokens),
+      scope: ref(Ast.Scope.{ids: Ast.IdMap.empty, parent: None}),
+    };
   };
 
   exception EnvError(string);
@@ -30,17 +35,6 @@ module Env = {
     };
   };
 
-  let rec peek_until = ({tokens}, fn) =>
-    switch (tokens^) {
-    | [] => []
-    | [t, ...rest] =>
-      if (fn(t)) {
-        [t];
-      } else {
-        [t, ...peek_until({tokens: ref(rest)}, fn)];
-      }
-    };
-
   let eat = ({tokens}) => {
     tokens :=
       (
@@ -51,13 +45,30 @@ module Env = {
       );
   };
 
+  let scope = ({scope}) => scope^;
+
+  let add_binding = (k, v, {scope}) => {
+    scope :=
+      (
+        switch (Ast.IdMap.mem(k, scope^.ids)) {
+        | false => {
+            parent: scope^.parent,
+            ids: Ast.IdMap.add(k, v, scope^.ids),
+          }
+        | _ => raise(EnvError("Variable already declared in scope"))
+        }
+      );
+  };
+
   let location = env => env |> peek |> Token.get_location;
 
   let expect = (fn, env) => {
-    switch(fn(peek(env))) {
-      | Ok(res) => eat(env); res;
-      | Error(msg) => raise(ParserError({ loc: location(env), hint: msg }))
-    }
+    switch (fn(peek(env))) {
+    | Ok(res) =>
+      eat(env);
+      res;
+    | Error(msg) => raise(ParserError({loc: location(env), hint: msg}))
+    };
   };
 
   let lookahead_one = ({tokens}) =>
@@ -178,7 +189,7 @@ and match_block = env => {
     fun
     | Token.LCurly(_) => Ok()
     | _ => Error(Some("Blocks to start with a \"{\"")),
-    env
+    env,
   );
   let rec match_statements = () => {
     let exp = match_statement(env);
@@ -206,19 +217,27 @@ and match_identifier = env => {
     fun
     | Identifier(loc, name) => Ok(Ast.Identifier.{loc, name, kind: Var})
     | _ => Error(Some("Expected a variable")),
-    env
+    env,
   );
 }
 and match_declaration = env => {
   switch (Env.peek(env)) {
   | Let((start, _)) =>
     Env.eat(env);
-    let id = match_identifier(env);
+    // @Incomplete not sure if this is the right way to add id to scope
+    let id =
+      Env.expect(
+        fun
+        | Identifier(loc, name) => Ok(Ast.Identifier.{loc, name, kind: Var})
+        | _ => Error(Some("Expected a variable")),
+        env,
+      );
+    Env.add_binding(id.name, id, env);
     Env.expect(
       fun
       | Token.Equals(_) => Ok()
       | _ => Error(Some("Expected \"=\" after the variable name")),
-      env
+      env,
     );
     let value = match_expression(env);
     Ast.Declaration.{
@@ -248,7 +267,7 @@ and match_statement =
         fun
         | Token.Semicolon(_) => Ok()
         | _ => Error(Some("Expected a \";\" after statement")),
-        env
+        env,
       );
       stmt;
     }
@@ -261,7 +280,7 @@ and match_apply =
         fun
         | Token.LParen(_) => Ok()
         | _ => Error(Some("Expected \"(\" after function variable")),
-        env
+        env,
       );
       let rec match_args = () =>
         switch (Env.peek(env)) {
@@ -298,7 +317,12 @@ let match_program = env => {
       [];
     };
   let (_, finish) = Env.location(env);
-  Ast.Program.{loc: ((1, 1), finish), body: match_statements(), kind: Void};
+  Ast.Program.{
+    loc: ((1, 1), finish),
+    body: match_statements(),
+    kind: Void,
+    scope: Env.scope(env),
+  };
 };
 
 let parse = (filename, tokens) => {

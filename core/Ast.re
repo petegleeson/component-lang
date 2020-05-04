@@ -1,5 +1,7 @@
 open Source;
 
+module IdMap = Map.Make(String);
+
 [@deriving show]
 type kind =
   | Int
@@ -80,8 +82,16 @@ and Program: {
     loc: location,
     body: list(Statement.t),
     kind,
+    scope: Scope.t
   };
-} = Program;
+} = Program
+
+and Scope: {
+  type t = {
+    ids: IdMap.t(Identifier.t),
+    parent: option(t)
+  };
+} = Scope;
 
 let rec show_expression =
   Expression.(
