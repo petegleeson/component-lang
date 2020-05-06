@@ -87,6 +87,7 @@ let gen_program =
         };
       };
       gen_body(program.body);
+      string_of_llmodule(the_module);
     }
   );
 

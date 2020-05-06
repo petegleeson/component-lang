@@ -1,3 +1,4 @@
-let x = (y) {
-  j;
+let y = 3;
+let id = (x) {
+  id + j;
 };

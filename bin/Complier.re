@@ -9,4 +9,3 @@ switch (Sys.argv) {
   )
 | _ => print_endline("need to provide a source file")
 };
-

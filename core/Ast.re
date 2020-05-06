@@ -1,13 +1,13 @@
 open Source;
 
-module IdMap = Map.Make(String);
-
 [@deriving show]
 type kind =
   | Int
   | Error
   | Var
   | Void;
+
+module Scope = Map.Make(String);
 
 module rec Apply: {
   type t = {
@@ -31,6 +31,7 @@ and Block: {
     loc: location,
     expressions: list(Statement.t),
     kind,
+    scope: Scope.t(Identifier.t),
   };
 } = Block
 and Declaration: {
@@ -63,6 +64,7 @@ and Function: {
     params: list(Identifier.t),
     body: Block.t,
     kind,
+    scope: Scope.t(Identifier.t),
   };
 } = Function
 and Int: {
@@ -82,16 +84,9 @@ and Program: {
     loc: location,
     body: list(Statement.t),
     kind,
-    scope: Scope.t
+    scope: Scope.t(Identifier.t),
   };
-} = Program
-
-and Scope: {
-  type t = {
-    ids: IdMap.t(Identifier.t),
-    parent: option(t)
-  };
-} = Scope;
+} = Program;
 
 let rec show_expression =
   Expression.(
@@ -170,14 +165,16 @@ and show_statement =
       | Declaration(decl) => show_declaration(decl)
       }
   )
-and show_identifier = Identifier.(({loc, kind, name}) =>
-  Format.sprintf(
-    "@[<2>Identifier.{@ loc: %s@ kind: %s@ name: \"%s\"@ }@]@.",
-    Source.show_location(loc),
-    show_kind(kind),
-    name,
-  )
-);
+and show_identifier =
+  Identifier.(
+    ({loc, kind, name}) =>
+      Format.sprintf(
+        "@[<2>Identifier.{@ loc: %s@ kind: %s@ name: \"%s\"@ }@]@.",
+        Source.show_location(loc),
+        show_kind(kind),
+        name,
+      )
+  );
 
 let show_program =
   Program.(
