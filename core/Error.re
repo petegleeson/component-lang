@@ -1,6 +1,7 @@
 type stage =
   | Lexing
-  | Parsing;
+  | Parsing
+  | TypeCheck;
 
 type t = {
   detail: string,

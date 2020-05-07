@@ -180,7 +180,7 @@ let show_program =
   Program.(
     ({loc, kind, body}) =>
       Format.sprintf(
-        "@[<2>Program.{@ loc: %s@ kind: %s@ expressions: [@ %s ]@ }@]@.",
+        "@[<2>Program.{@ loc: %s@ kind: %s@ statements: [@ %s ]@ }@]@.",
         Source.show_location(loc),
         show_kind(kind),
         List.fold_left(
