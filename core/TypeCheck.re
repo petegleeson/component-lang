@@ -4,7 +4,7 @@ exception
     hint: option(string),
   });
 
-let kind =
+let rec kind_of_expression =
   Ast.Expression.(
     expr =>
       switch (expr) {
@@ -14,6 +14,14 @@ let kind =
       | Int({kind})
       | BinaryOperator({kind})
       | Identifier({kind}) => kind
+      }
+  )
+and kind_of_statement =
+  Ast.Statement.(
+    stmt =>
+      switch (stmt) {
+      | Expression(expr) => kind_of_expression(expr)
+      | Declaration(decl) => decl.kind
       }
   );
 
@@ -34,7 +42,7 @@ let set_kind =
   );
 
 let unify = (a, b) =>
-  switch (kind(a), kind(b)) {
+  switch (kind_of_expression(a), kind_of_expression(b)) {
   | (Var(_), x) => (set_kind(x, a), b)
   // @Incomplete should not default to doing nothing
   | (_, _) => (a, b)

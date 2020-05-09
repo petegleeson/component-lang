@@ -156,31 +156,7 @@ let rec match_expression =
           | None => Identifier(match_identifier(env))
           }
         | LCurly(_) => Block(match_block(env))
-        | LParen((start, _)) =>
-          Env.eat(env);
-          Env.push_scope(env);
-          let rec match_params = () =>
-            switch (Env.peek(env)) {
-            | RParen(_) =>
-              Env.eat(env);
-              [];
-            | Comma(_) =>
-              Env.eat(env);
-              let param = match_new_identifier(env);
-              [param, ...match_params()];
-            | _ =>
-              let param = match_new_identifier(env);
-              [param, ...match_params()];
-            };
-          let params = match_params();
-          let body = match_block(env);
-          Function({
-            loc: (start, Source.get_end(body.loc)),
-            kind: Var(Env.next_id(env)),
-            params,
-            body,
-            scope: Env.pop_scope(env),
-          });
+        | LParen((start, _)) => Function(match_function(env))
         | _ =>
           raise(
             ParserError({
@@ -245,20 +221,22 @@ and match_block = env => {
     env,
   );
   let rec match_statements = () => {
-    let exp = match_statement(env);
+    let stmt = match_statement(env);
     switch (Env.peek(env)) {
-    | RCurly(_) => [exp]
-    | _ => [exp, ...match_statements()]
+    | RCurly(_) => ([stmt], TypeCheck.kind_of_statement(stmt))
+    | _ =>
+      let (stmts, kind) = match_statements();
+      ([stmt, ...stmts], kind);
     };
   };
-  let expressions = match_statements();
+  let (expressions, kind) = match_statements();
   switch (Env.peek(env)) {
   | RCurly((_, finish)) =>
     Env.eat(env);
     Ast.Block.{
       loc: (start, finish),
       expressions,
-      kind: Var(Env.next_id(env)),
+      kind,
       scope: Env.pop_scope(env),
     };
   | _ =>
@@ -339,6 +317,46 @@ and match_declaration = env => {
     )
   };
 }
+and match_function =
+  Ast.Function.(
+    env => {
+      let (start, _) = Env.location(env);
+      Env.expect(
+        fun
+        | Token.LParen(_) => Ok()
+        | _ =>
+          Error(Some("Expected function definition to start with \"(\"")),
+        env,
+      );
+      Env.push_scope(env);
+      let rec match_params = () =>
+        switch (Env.peek(env)) {
+        | RParen(_) =>
+          Env.eat(env);
+          [];
+        | Comma(_) =>
+          Env.eat(env);
+          let param = match_new_identifier(env);
+          [param, ...match_params()];
+        | _ =>
+          let param = match_new_identifier(env);
+          [param, ...match_params()];
+        };
+      let params = match_params();
+      let body = match_block(env);
+      Ast.Function.{
+        loc: (start, Source.get_end(body.loc)),
+        kind:
+          Func(
+            List.map(Ast.Identifier.(({kind}) => kind), params),
+            body.kind,
+          ),
+        params,
+        body,
+        scope: Env.pop_scope(env),
+      };
+    }
+  )
 and match_statement =
   Ast.Statement.(
     env => {
