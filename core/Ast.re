@@ -5,6 +5,7 @@ type kind =
   | Int
   | Error
   | Var(int)
+  | Function(list(kind), kind)
   | Void;
 
 module Scope = Map.Make(String);
