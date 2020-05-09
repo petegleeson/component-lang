@@ -10,10 +10,15 @@ module Env = {
   type t = {
     tokens: ref(list(Token.case)),
     scopes: ref(list(Ast.Scope.t(Ast.Identifier.t))),
+    current_id: ref(int),
   };
 
   let init = tokens => {
-    {tokens: ref(tokens), scopes: ref([Ast.Scope.empty])};
+    {
+      tokens: ref(tokens),
+      scopes: ref([Ast.Scope.empty]),
+      current_id: ref(0),
+    };
   };
 
   exception EnvError(string);
@@ -89,26 +94,14 @@ module Env = {
       );
   };
 
-  let expect_binding = (k, env) => {
+  let get_binding = (k, env) => {
     let rec find = scopes =>
       switch (scopes) {
-      | [] =>
-        raise(
-          ParserError({
-            loc: location(env),
-            hint:
-              Some(
-                Printf.sprintf(
-                  "Expected variable \"%s\" to be declared before use",
-                  k,
-                ),
-              ),
-          }),
-        )
+      | [] => None
       | [curr, ...rest] =>
         switch (Ast.Scope.find_opt(k, curr)) {
-        | Some(_) => ()
         | None => find(rest)
+        | some_id => some_id
         }
       };
     find(env.scopes^);
@@ -129,6 +122,11 @@ module Env = {
     | [_] => None
     | [_, lh, ...rest] => Some(lh)
     };
+
+  let next_id = ({current_id}) => {
+    current_id := current_id^ + 1;
+    current_id^;
+  };
 };
 
 let match_semicolon = env =>
@@ -178,7 +176,7 @@ let rec match_expression =
           let body = match_block(env);
           Function({
             loc: (start, Source.get_end(body.loc)),
-            kind: Var,
+            kind: Var(Env.next_id(env)),
             params,
             body,
             scope: Env.pop_scope(env),
@@ -260,7 +258,7 @@ and match_block = env => {
     Ast.Block.{
       loc: (start, finish),
       expressions,
-      kind: Var,
+      kind: Var(Env.next_id(env)),
       scope: Env.pop_scope(env),
     };
   | _ =>
@@ -276,9 +274,24 @@ and match_identifier = env => {
   Env.expect(
     fun
     | Identifier(loc, name) => {
-        let id = Ast.Identifier.{loc, name, kind: Var};
-        Env.expect_binding(id.name, env);
-        Ok(id);
+        switch (Env.get_binding(name, env)) {
+        | Some({kind}) =>
+          let id = Ast.Identifier.{loc, name, kind};
+          Ok(id);
+        | None =>
+          raise(
+            ParserError({
+              loc,
+              hint:
+                Some(
+                  Printf.sprintf(
+                    "Expected variable \"%s\" to be declared before use",
+                    name,
+                  ),
+                ),
+            }),
+          )
+        };
       }
     | _ => Error(Some("Expected a variable")),
     env,
@@ -288,7 +301,7 @@ and match_new_identifier = env => {
   Env.expect(
     fun
     | Identifier(loc, name) => {
-        let id = Ast.Identifier.{loc, name, kind: Var};
+        let id = Ast.Identifier.{loc, name, kind: Var(Env.next_id(env))};
         Env.add_binding(id.name, id, env);
         Ok(id);
       }
@@ -371,7 +384,7 @@ and match_apply =
       let (args, finish) = match_args();
       Apply({
         loc: (Source.get_start(func.loc), finish),
-        kind: Var,
+        kind: Var(Env.next_id(env)),
         args,
         func,
       });

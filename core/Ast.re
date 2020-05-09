@@ -4,7 +4,7 @@ open Source;
 type kind =
   | Int
   | Error
-  | Var
+  | Var(int)
   | Void;
 
 module Scope = Map.Make(String);

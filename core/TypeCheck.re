@@ -35,7 +35,7 @@ let set_kind =
 
 let unify = (a, b) =>
   switch (kind(a), kind(b)) {
-  | (Var, x) => (set_kind(x, a), b)
+  | (Var(_), x) => (set_kind(x, a), b)
   // @Incomplete should not default to doing nothing
   | (_, _) => (a, b)
   };
@@ -55,10 +55,22 @@ let type_declaration =
         unify(Ast.Expression.Identifier(typed_id), typed_value);
 
       // @Incomplete unify return initial type?
-      {loc, id: switch(unified_id) {
-        | Identifier(id) => id
-        | _ => raise(TypeCheckError({ loc: typed_id.loc, hint: Some("Identifier not unified properly")}))
-      }, value: unified_value, kind};
+      {
+        loc,
+        id:
+          switch (unified_id) {
+          | Identifier(id) => id
+          | _ =>
+            raise(
+              TypeCheckError({
+                loc: typed_id.loc,
+                hint: Some("Identifier not unified properly"),
+              }),
+            )
+          },
+        value: unified_value,
+        kind,
+      };
     }
   );
 

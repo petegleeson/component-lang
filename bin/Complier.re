@@ -7,6 +7,7 @@ switch (Sys.argv) {
     |> (
       result =>
         bind(result, TypeCheck.type_check(filename))
+        // |> fold(~ok=CodeGen.gen_program, ~error=Error.error_message)
         |> fold(~ok=Ast.show_program, ~error=Error.error_message)
         |> Console.log
     )
