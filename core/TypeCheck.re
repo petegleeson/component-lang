@@ -64,6 +64,13 @@ module Scope = {
 
 module Subst = Map.Make(Int);
 
+let show_subst = s =>
+  Subst.fold(
+    (k, v, str) => Printf.sprintf("%s %i: %s", str, k, Ast.show_kind(v)),
+    s,
+    "",
+  );
+
 let rec apply_subst = (subst, kind: Ast.kind) =>
   switch (kind) {
   | Var(id) =>
@@ -84,6 +91,9 @@ let apply_subst_to_scope = (subst, scope) =>
     scope,
   );
 
+let apply_subst_to_scopes = (subst, scopes) =>
+  List.map(apply_subst_to_scope(subst), scopes);
+
 exception UnifyError(string);
 
 let compose_subst = (s, s') =>
@@ -102,8 +112,6 @@ let rec unify = (a: Ast.kind, b: Ast.kind) =>
   switch (a, b) {
   | (Int, Int) => Subst.empty
   | (Void, Void) => Subst.empty
-  | (Var(id), x)
-  | (x, Var(id)) => Subst.add(id, x, Subst.empty)
   | (Func(params, return), Func(params', return')) =>
     List.fold_left2(
       (subst, p, p') => compose_subst(unify(p, p'), subst),
@@ -111,6 +119,9 @@ let rec unify = (a: Ast.kind, b: Ast.kind) =>
       [return, ...params],
       [return', ...params'],
     )
+  | (Var(id), Var(id')) when id === id' => Subst.empty
+  | (Var(id), x)
+  | (x, Var(id)) => Subst.add(id, x, Subst.empty)
   | (a, b) =>
     raise(
       UnifyError(
@@ -126,27 +137,55 @@ let rec unify = (a: Ast.kind, b: Ast.kind) =>
 let type_identifier =
   Ast.Identifier.(
     ({loc, name, kind}, scope) => {
-      loc,
-      name,
-      kind: Scope.lookup(name, scope).kind,
+      let subst = unify(kind, Scope.lookup(name, scope).kind);
+      ({loc, name, kind: apply_subst(subst, kind)}, subst);
     }
   );
 
-let type_expression =
+let rec type_expression =
   Ast.Expression.(
     (expr, scope) =>
       switch (expr) {
       | Apply({loc, kind, func, args}) =>
-        Apply({loc, kind, func: type_identifier(func, scope), args})
-      | e => e
+        let (typed_func, func_subst) = type_identifier(func, scope);
+        let (typed_args, args_subst) =
+          List.fold_left(
+            ((exprs, subst), arg) => {
+              let (typed_expr, expr_subst) =
+                type_expression(arg, apply_subst_to_scopes(subst, scope));
+              ([typed_expr, ...exprs], compose_subst(subst, expr_subst));
+            },
+            ([], func_subst),
+            args,
+          );
+
+        let subst =
+          Ast.(
+            unify(
+              Func(List.map(e => kind_of_expression(e), typed_args), kind),
+              typed_func.kind,
+            )
+          );
+
+        (
+          Apply({
+            loc,
+            kind: apply_subst(subst, kind),
+            func: typed_func,
+            args: typed_args,
+          }),
+          Subst.empty,
+        );
+      | e => (e, Subst.empty)
       }
   );
 
 let type_declaration =
   Ast.Declaration.(
     ({loc, id, value, kind}, scope) => {
-      let typed_id = type_identifier(id, scope);
-      let typed_value = type_expression(value, scope);
+      let (typed_id, subst_id) = type_identifier(id, scope);
+      let (typed_value, expr_subst) =
+        type_expression(value, apply_subst_to_scopes(subst_id, scope));
 
       let subst = unify(typed_id.kind, kind_of_expression(typed_value));
 
@@ -161,7 +200,7 @@ let type_declaration =
           value: typed_value,
           kind,
         },
-        subst,
+        compose_subst(subst, expr_subst),
       );
     }
   );
@@ -170,10 +209,9 @@ let type_statement =
   Ast.Statement.(
     (stmt, scope) =>
       switch (stmt) {
-      | Expression(expr) => (
-          Expression(type_expression(expr, scope)),
-          Subst.empty,
-        )
+      | Expression(expr) =>
+        let (typed_expr, subst) = type_expression(expr, scope);
+        (Expression(typed_expr), subst);
       | Declaration(decl) =>
         let (typed_decl, subst) = type_declaration(decl, scope);
         (Declaration(typed_decl), subst);
