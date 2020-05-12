@@ -418,10 +418,12 @@ let match_program = env => {
     } else {
       [];
     };
+  // @Bug this gives the location of the first token
   let (_, finish) = Env.location(env);
+  let body = match_statements();
   Ast.Program.{
     loc: ((1, 1), finish),
-    body: match_statements(),
+    body,
     kind: Void,
     scope: Env.current_scope(env),
   };

@@ -123,22 +123,30 @@ let rec unify = (a: Ast.kind, b: Ast.kind) =>
     )
   };
 
+let type_identifier =
+  Ast.Identifier.(
+    ({loc, name, kind}, scope) => {
+      loc,
+      name,
+      kind: Scope.lookup(name, scope).kind,
+    }
+  );
+
 let type_expression =
   Ast.Expression.(
-    expr =>
+    (expr, scope) =>
       switch (expr) {
-      | Apply({loc, kind, func, args}) => Apply({loc, kind, func, args})
+      | Apply({loc, kind, func, args}) =>
+        Apply({loc, kind, func: type_identifier(func, scope), args})
       | e => e
       }
   );
 
-let type_identifier = Ast.Identifier.(id => id);
-
 let type_declaration =
   Ast.Declaration.(
-    ({loc, id, value, kind}) => {
-      let typed_id = type_identifier(id);
-      let typed_value = type_expression(value);
+    ({loc, id, value, kind}, scope) => {
+      let typed_id = type_identifier(id, scope);
+      let typed_value = type_expression(value, scope);
 
       let subst = unify(typed_id.kind, kind_of_expression(typed_value));
 
@@ -160,14 +168,14 @@ let type_declaration =
 
 let type_statement =
   Ast.Statement.(
-    stmt =>
+    (stmt, scope) =>
       switch (stmt) {
       | Expression(expr) => (
-          Expression(type_expression(expr)),
+          Expression(type_expression(expr, scope)),
           Subst.empty,
         )
       | Declaration(decl) =>
-        let (typed_decl, subst) = type_declaration(decl);
+        let (typed_decl, subst) = type_declaration(decl, scope);
         (Declaration(typed_decl), subst);
       }
   );
@@ -178,7 +186,8 @@ let type_program =
       let (typed_body, subst) =
         List.fold_left(
           ((stmts, subst), stmt) => {
-            let (typed_stmt, stmt_subst) = type_statement(stmt);
+            let (typed_stmt, stmt_subst) =
+              type_statement(stmt, [apply_subst_to_scope(subst, scope)]);
             ([typed_stmt, ...stmts], compose_subst(subst, stmt_subst));
           },
           ([], Subst.empty),
@@ -208,44 +217,3 @@ let type_check = (filename, program) =>
       },
     )
   };
-
-/*
- let rec get_kind =
-   Ast.(
-     ast =>
-       switch (ast) {
-       | Int({kind})
-       | BinaryOperator({kind})
-       | Program({kind})
-       | Unknown({kind}) => kind
-       }
-   );
-
- let unify =
-   Ast.(
-     (a: kind, b: kind) => (
-       switch (a, b) {
-       | (x, Var) => x
-       | (Var, x) => x
-       | (Int, Int) => Int
-       | _ => Error
-       }: kind
-     )
-   ) */
-// let rec type_check =
-//   Ast.(
-//     ast =>
-//       switch (ast) {
-//       | Int({loc, raw}) => Int({loc, raw, kind: Int})
-//       | BinaryOperator({loc, operator, left, right}) =>
-//         BinaryOperator({
-//           loc,
-//           operator,
-//           kind: unify(unify(Int, left.kind), unify(Int, right.kind)),
-//           left,
-//           right,
-//         })
-//       | Program({loc, kind, body}) =>
-//         Program({loc, kind, body: List.map(type_check, [])})
-//       | Unknown({loc}) => Unknown({loc, kind: Var})
-/*       */

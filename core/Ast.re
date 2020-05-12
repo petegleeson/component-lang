@@ -176,13 +176,17 @@ and show_identifier =
       )
   );
 
+let show_scope = scope =>
+  Scope.fold((k, id, str) => str ++ show_identifier(id) ++ ", ", scope, "");
+
 let show_program =
   Program.(
-    ({loc, kind, body}) =>
+    ({loc, kind, body, scope}) =>
       Format.sprintf(
-        "@[<2>Program.{@ loc: %s@ kind: %s@ statements: [@ %s ]@ }@]@.",
+        "@[<2>Program.{@ loc: %s@ kind: %s@ scope: %s@ statements: [@ %s ]@ }@]@.",
         Source.show_location(loc),
         show_kind(kind),
+        show_scope(scope),
         List.fold_left(
           (res, stmt) => res ++ show_statement(stmt) ++ ", ",
           "",
