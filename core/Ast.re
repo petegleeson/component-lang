@@ -3,7 +3,6 @@ open Source;
 [@deriving show]
 type kind =
   | Int
-  | Error
   | Var(int)
   | Func(list(kind), kind)
   | Void;
