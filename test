@@ -1,7 +1,1 @@
-let y = (j) {
-  j;
-};
-
 let five = 5;
-
-let x = y(five);
