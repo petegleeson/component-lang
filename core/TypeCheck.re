@@ -253,7 +253,10 @@ let rec type_expression =
           }),
           all_subst,
         );
-      | e => (e, Subst.empty)
+      | Identifier(id) =>
+        let (typed_id, subst) = type_identifier(id, scopes);
+        (Identifier(typed_id), subst);
+      | Int(x) => (Int(x), Subst.empty)
       }
   )
 and type_block =
