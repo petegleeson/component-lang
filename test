@@ -1,5 +1,5 @@
-let y = () {
-  5;
+let y = (j) {
+  j + 5;
 };
 
-let x = y();
+let x = y(5);

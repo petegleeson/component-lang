@@ -75,7 +75,7 @@ let rec apply_subst = (subst, kind: Ast.kind) =>
   switch (kind) {
   | Var(id) =>
     switch (Subst.find_opt(id, subst)) {
-    | Some(k) => k
+    | Some(k) => apply_subst(subst, k)
     | None => Ast.Var(id)
     }
   | Func(params, ret) =>
@@ -108,6 +108,7 @@ let compose_subst = (s, s') =>
     s',
   );
 
+// @Notsure - think about how to represent the "expected" type
 let rec unify = (a: Ast.kind, b: Ast.kind) =>
   switch (a, b) {
   | (Int, Int) => Subst.empty
@@ -144,15 +145,15 @@ let type_identifier =
 
 let rec type_expression =
   Ast.Expression.(
-    (expr, scope) =>
+    (expr, scopes) =>
       switch (expr) {
       | Apply({loc, kind, func, args}) =>
-        let (typed_func, func_subst) = type_identifier(func, scope);
+        let (typed_func, func_subst) = type_identifier(func, scopes);
         let (typed_args, args_subst) =
           List.fold_left(
             ((exprs, subst), arg) => {
               let (typed_expr, expr_subst) =
-                type_expression(arg, apply_subst_to_scopes(subst, scope));
+                type_expression(arg, apply_subst_to_scopes(subst, scopes));
               ([typed_expr, ...exprs], compose_subst(subst, expr_subst));
             },
             ([], func_subst),
@@ -174,13 +175,127 @@ let rec type_expression =
             func: typed_func,
             args: typed_args,
           }),
+          // @Incomplete should return subst - need to instanciate typed_func.kind
           Subst.empty,
+        );
+      | BinaryOperator({loc, kind, operator, left, right}) =>
+        let (typed_left, left_subst) = type_expression(left, scopes);
+        let (typed_right, right_subst) =
+          type_expression(right, apply_subst_to_scopes(left_subst, scopes));
+
+        let kind_left = kind_of_expression(typed_left);
+        let kind_right = kind_of_expression(typed_right);
+
+        let subst_binop_left = unify(kind_left, Ast.Int);
+        let subst_binop_right = unify(kind_right, Ast.Int);
+
+        (
+          BinaryOperator({
+            loc,
+            kind,
+            operator,
+            left:
+              kind_left
+              |> apply_subst(subst_binop_left)
+              |> (s => set_kind(s, typed_left)),
+            right:
+              kind_right
+              |> apply_subst(subst_binop_right)
+              |> (s => set_kind(s, typed_right)),
+          }),
+          compose_subst(subst_binop_left, subst_binop_right),
+        );
+      | Block(block) =>
+        let (typed_block, subst) = type_block(block, scopes);
+        (Block(typed_block), subst);
+      | Function({loc, kind, params, body, scope}) =>
+        let (typed_params, params_subst) =
+          List.fold_left(
+            ((exprs, subst), param) => {
+              let (typed_param, param_subst) =
+                type_identifier(
+                  param,
+                  apply_subst_to_scopes(subst, [scope, ...scopes]),
+                );
+              ([typed_param, ...exprs], compose_subst(subst, param_subst));
+            },
+            ([], Subst.empty),
+            params,
+          );
+        let (typed_body, body_subst) = type_block(body, [scope, ...scopes]);
+        let func_subst =
+          unify(
+            kind,
+            Ast.Func(
+              List.map((id: Ast.Identifier.t) => id.kind, typed_params),
+              typed_body.kind,
+            ),
+          );
+
+        let all_subst = compose_subst(body_subst, func_subst);
+        (
+          Function({
+            loc,
+            kind: apply_subst(all_subst, kind),
+            params:
+              List.map(
+                Ast.Identifier.(
+                  ({loc, name, kind}) => {
+                    loc,
+                    name,
+                    kind: apply_subst(all_subst, kind),
+                  }
+                ),
+                typed_params,
+              ),
+            body: typed_body,
+            scope: apply_subst_to_scope(all_subst, scope),
+          }),
+          all_subst,
         );
       | e => (e, Subst.empty)
       }
-  );
-
-let type_declaration =
+  )
+and type_block =
+  Ast.Block.(
+    ({loc, kind, expressions, scope}, scopes) => {
+      let (typed_stmts, subst) =
+        List.fold_left(
+          ((stmts, subst), stmt) => {
+            let (typed_stmt, stmt_subst) =
+              type_statement(
+                stmt,
+                apply_subst_to_scopes(subst, [scope, ...scopes]),
+              );
+            ([typed_stmt, ...stmts], compose_subst(subst, stmt_subst));
+          },
+          ([], Subst.empty),
+          expressions,
+        );
+      (
+        {
+          loc,
+          kind: apply_subst(subst, kind),
+          expressions: typed_stmts,
+          scope: apply_subst_to_scope(subst, scope),
+        },
+        subst,
+      );
+    }
+  )
+and type_statement =
+  Ast.Statement.(
+    (stmt, scope) =>
+      switch (stmt) {
+      | Expression(expr) =>
+        let (typed_expr, subst) = type_expression(expr, scope);
+        (Expression(typed_expr), subst);
+      | Declaration(decl) =>
+        let (typed_decl, subst) = type_declaration(decl, scope);
+        (Declaration(typed_decl), subst);
+      }
+  )
+and type_declaration =
   Ast.Declaration.(
     ({loc, id, value, kind}, scope) => {
       let (typed_id, subst_id) = type_identifier(id, scope);
@@ -203,19 +318,6 @@ let type_declaration =
         compose_subst(subst, expr_subst),
       );
     }
-  );
-
-let type_statement =
-  Ast.Statement.(
-    (stmt, scope) =>
-      switch (stmt) {
-      | Expression(expr) =>
-        let (typed_expr, subst) = type_expression(expr, scope);
-        (Expression(typed_expr), subst);
-      | Declaration(decl) =>
-        let (typed_decl, subst) = type_declaration(decl, scope);
-        (Declaration(typed_decl), subst);
-      }
   );
 
 let type_program =
