@@ -87,9 +87,14 @@ module GenEnv = {
   let is_global_scope = t => List.length(t.scopes) === 1;
 };
 
-let lltype_of = (kind, env: GenEnv.t) =>
+let rec lltype_of = (env: GenEnv.t, kind) =>
   switch (kind) {
   | Int => i32_type(env.llcontext)
+  | Func(params, ret) =>
+    function_type(
+      lltype_of(env, ret),
+      Array.of_list(List.map(lltype_of(env), params)),
+    )
   | x =>
     raise(
       Error(Printf.sprintf("cannot get lltype of %s", Ast.show_kind(x))),
@@ -101,7 +106,14 @@ let gen_expression =
     (expr, env) =>
       switch (expr) {
       | Int({kind, raw}) =>
-        const_int(lltype_of(kind, env), int_of_string(raw))
+        const_int(lltype_of(env, kind), int_of_string(raw))
+      | Function({kind, params, body}) =>
+        let fn = define_function("", lltype_of(env, kind), env.llmodule);
+        Array.iteri(
+          (i, p) => set_value_name(List.nth(params, i).name, p),
+          Llvm.params(fn),
+        );
+        fn;
       | x =>
         raise(
           Error(
@@ -117,11 +129,13 @@ let gen_expression =
 let gen_declaration =
   Declaration.(
     ({id, value}, env) =>
-      if (GenEnv.is_global_scope(env)) {
-        define_global(id.name, gen_expression(value, env), env.llmodule);
-        ();
-      } else {
-        raise(Error("can't gen such declaration"));
+      switch (value, gen_expression(value, env)) {
+      | (Int(_), lval) when GenEnv.is_global_scope(env) =>
+        define_global(id.name, lval, env.llmodule)
+      | (Function(_), lval) =>
+        set_value_name(id.name, lval);
+        lval;
+      | (_, lval) => lval
       }
   );
 
@@ -132,7 +146,6 @@ let gen_statement =
       | Expression(e) => raise(Error("can't code gen expression yet"))
       | Declaration(d) => gen_declaration(d, env)
       };
-      ();
     }
   );
 
@@ -152,7 +165,9 @@ let gen_program =
       let rec gen_stmts = stmts => {
         switch (stmts) {
         | [] => ()
-        | [stmt, ...rest] => gen_statement(stmt, env)
+        | [stmt, ...rest] =>
+          gen_statement(stmt, env);
+          gen_stmts(rest);
         };
       };
       gen_stmts(program.body);
@@ -167,16 +182,7 @@ let gen_program =
 let build_program =
   Program.(
     filename => {
-      ()// Llvm_all_backends.initialize();
-        // // Llvm_WebAssembly.initialize();
-        // // print_endline(
-        // //   switch (Llvm_target.Target.first()) {
-        // //   | Some(target) => Llvm_target.Target.name(target)
-        // //   | None => ""
-        // //   },
-        // // );
-        // // List.iter(
-        // //   x => print_endline(Llvm_target.Target.name(x)),
+      ()// //   x => print_endline(Llvm_target.Target.name(x)),
         // //   Llvm_target.Target.all(),
         // // );
         // let machine =
@@ -187,8 +193,17 @@ let build_program =
         // Llvm_target.TargetMachine.emit_to_file(
         //   the_module,
         //   AssemblyFile,
-        ; //   machine,
- //   filename,
+        //   filename,
+        //   machine,
+        // Llvm_all_backends.initialize();
+        // // Llvm_WebAssembly.initialize();
+        // // print_endline(
+        // //   switch (Llvm_target.Target.first()) {
+        // //   | Some(target) => Llvm_target.Target.name(target)
+        // //   | None => ""
+        // //   },
+        ; // // List.iter(
+ // // );
         // );
     }
   );
