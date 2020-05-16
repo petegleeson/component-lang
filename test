@@ -1,5 +1,5 @@
 let five = 5;
 
-let foo = (x) {
+let add = (x) {
   x + 1;
 };

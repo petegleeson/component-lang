@@ -76,12 +76,23 @@ exception Error(string);
 //   }
 // and gen_declaration = Ast.Statement.((Declaration.{id, value}) => {});
 
+module Locals = Map.Make(String);
+
 module GenEnv = {
   type t = {
     llcontext: Llvm.llcontext,
     llmodule: Llvm.llmodule,
     llbuilder: Llvm.llbuilder,
+    lllocals: Locals.t(llvalue),
     scopes: list(Ast.Scope.t(Ast.Identifier.t)),
+  };
+
+  let set_lllocals = ({llcontext, llmodule, llbuilder, scopes}, lllocals) => {
+    llcontext,
+    llmodule,
+    llbuilder,
+    lllocals,
+    scopes,
   };
 
   let is_global_scope = t => List.length(t.scopes) === 1;
@@ -101,18 +112,46 @@ let rec lltype_of = (env: GenEnv.t, kind) =>
     )
   };
 
-let gen_expression =
+let rec gen_expression =
   Expression.(
-    (expr, env) =>
+    (expr, env: GenEnv.t) =>
       switch (expr) {
+      | BinaryOperator({operator, left, right}) =>
+        let left_val = gen_expression(left, env);
+        let right_val = gen_expression(right, env);
+        switch (operator) {
+        | Plus => build_add(left_val, right_val, "", env.llbuilder)
+        | Minus => build_sub(left_val, right_val, "", env.llbuilder)
+        | Multiply => build_mul(left_val, right_val, "", env.llbuilder)
+        | Divide => build_sdiv(left_val, right_val, "", env.llbuilder)
+        };
       | Int({kind, raw}) =>
         const_int(lltype_of(env, kind), int_of_string(raw))
+      | Identifier({name}) =>
+        switch (Locals.find_opt(name, env.lllocals)) {
+        | Some(local) => local
+        | None =>
+          switch (lookup_global(name, env.llmodule)) {
+          | Some(global) => global
+          | None => raise(Error(Printf.sprintf("Cannot find id %s", name)))
+          }
+        }
       | Function({kind, params, body}) =>
-        let fn = define_function("", lltype_of(env, kind), env.llmodule);
-        Array.iteri(
-          (i, p) => set_value_name(List.nth(params, i).name, p),
-          Llvm.params(fn),
-        );
+        let fn = declare_function("", lltype_of(env, kind), env.llmodule);
+        let locals =
+          List.fold_left2(
+            (locals, p: Identifier.t, llp) => {
+              set_value_name(p.name, llp);
+              Locals.add(p.name, llp, locals);
+            },
+            env.lllocals,
+            params,
+            Array.to_list(Llvm.params(fn)),
+          );
+        let bb = append_block(env.llcontext, "entry", fn);
+        position_at_end(bb, env.llbuilder);
+        let last_lval = gen_block(body, GenEnv.set_lllocals(env, locals));
+        build_ret(last_lval, env.llbuilder);
         fn;
       | x =>
         raise(
@@ -124,26 +163,38 @@ let gen_expression =
           ),
         )
       }
-  );
-
-let gen_declaration =
+  )
+and gen_block =
+  Block.(
+    ({expressions}, env) => {
+      let rec gen_stmts = stmts =>
+        switch (stmts) {
+        | [] => raise(Error("can't code gen empty block"))
+        | [stmt] => gen_statement(stmt, env)
+        | [stmt, ...rest] =>
+          gen_statement(stmt, env);
+          gen_stmts(rest);
+        };
+      gen_stmts(expressions);
+    }
+  )
+and gen_declaration =
   Declaration.(
     ({id, value}, env) =>
       switch (value, gen_expression(value, env)) {
-      | (Int(_), lval) when GenEnv.is_global_scope(env) =>
-        define_global(id.name, lval, env.llmodule)
       | (Function(_), lval) =>
         set_value_name(id.name, lval);
         lval;
+      | (_, lval) when GenEnv.is_global_scope(env) =>
+        define_global(id.name, lval, env.llmodule)
       | (_, lval) => lval
       }
-  );
-
-let gen_statement =
+  )
+and gen_statement =
   Statement.(
     (stmt, env) => {
       switch (stmt) {
-      | Expression(e) => raise(Error("can't code gen expression yet"))
+      | Expression(e) => gen_expression(e, env)
       | Declaration(d) => gen_declaration(d, env)
       };
     }
@@ -160,6 +211,7 @@ let gen_program =
           llcontext,
           llmodule,
           llbuilder: builder,
+          lllocals: Locals.empty,
           scopes: [program.scope],
         };
       let rec gen_stmts = stmts => {
@@ -182,7 +234,10 @@ let gen_program =
 let build_program =
   Program.(
     filename => {
-      ()// //   x => print_endline(Llvm_target.Target.name(x)),
+      ()// //   },
+        // // );
+        // // List.iter(
+        // //   x => print_endline(Llvm_target.Target.name(x)),
         // //   Llvm_target.Target.all(),
         // // );
         // let machine =
@@ -199,11 +254,8 @@ let build_program =
         // // Llvm_WebAssembly.initialize();
         // // print_endline(
         // //   switch (Llvm_target.Target.first()) {
-        // //   | Some(target) => Llvm_target.Target.name(target)
-        // //   | None => ""
-        // //   },
-        ; // // List.iter(
- // // );
+        ; // //   | None => ""
+ // //   | Some(target) => Llvm_target.Target.name(target)
         // );
     }
   );
