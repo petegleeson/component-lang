@@ -116,6 +116,13 @@ let rec gen_expression =
   Expression.(
     (expr, env: GenEnv.t) =>
       switch (expr) {
+      | Apply({kind, func, args}) =>
+        build_call(
+          gen_identifier(func, env),
+          Array.of_list(List.map(e => gen_expression(e, env), args)),
+          "",
+          env.llbuilder,
+        )
       | BinaryOperator({operator, left, right}) =>
         let left_val = gen_expression(left, env);
         let right_val = gen_expression(right, env);
@@ -127,15 +134,7 @@ let rec gen_expression =
         };
       | Int({kind, raw}) =>
         const_int(lltype_of(env, kind), int_of_string(raw))
-      | Identifier({name}) =>
-        switch (Locals.find_opt(name, env.lllocals)) {
-        | Some(local) => local
-        | None =>
-          switch (lookup_global(name, env.llmodule)) {
-          | Some(global) => global
-          | None => raise(Error(Printf.sprintf("Cannot find id %s", name)))
-          }
-        }
+      | Identifier(id) => gen_identifier(id, env)
       | Function({kind, params, body}) =>
         let fn = declare_function("", lltype_of(env, kind), env.llmodule);
         let locals =
@@ -190,6 +189,22 @@ and gen_declaration =
       | (_, lval) => lval
       }
   )
+and gen_identifier =
+  Identifier.(
+    ({kind, name}, env) =>
+      switch (Locals.find_opt(name, env.lllocals)) {
+      | Some(local) => local
+      | None =>
+        switch (
+          lookup_global(name, env.llmodule),
+          lookup_function(name, env.llmodule),
+        ) {
+        | (Some(global), _)
+        | (_, Some(global)) => global
+        | _ => raise(Error(Printf.sprintf("Cannot find id %s", name)))
+        }
+      }
+  )
 and gen_statement =
   Statement.(
     (stmt, env) => {
@@ -234,9 +249,7 @@ let gen_program =
 let build_program =
   Program.(
     filename => {
-      ()// //   },
-        // // );
-        // // List.iter(
+      ()// // List.iter(
         // //   x => print_endline(Llvm_target.Target.name(x)),
         // //   Llvm_target.Target.all(),
         // // );
@@ -254,8 +267,10 @@ let build_program =
         // // Llvm_WebAssembly.initialize();
         // // print_endline(
         // //   switch (Llvm_target.Target.first()) {
-        ; // //   | None => ""
- // //   | Some(target) => Llvm_target.Target.name(target)
+        // //   | Some(target) => Llvm_target.Target.name(target)
+        // //   | None => ""
+        ; // // );
+ // //   },
         // );
     }
   );

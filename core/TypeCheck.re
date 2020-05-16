@@ -94,22 +94,58 @@ let apply_subst_to_scope = (subst, scope) =>
 let apply_subst_to_scopes = (subst, scopes) =>
   List.map(apply_subst_to_scope(subst), scopes);
 
-exception UnifyError(string);
-
-let compose_subst = (s, s') =>
-  Subst.union(
-    (_, a, _) =>
-      raise(
-        UnifyError(
-          Printf.sprintf("Var already in subst %s", Ast.show_kind(a)),
-        ),
-      ),
-    s,
-    s',
+let apply_subst_to_id =
+  Ast.Identifier.(
+    (subst, {loc, name, kind}) => {
+      loc,
+      name,
+      kind: apply_subst(subst, kind),
+    }
   );
 
+// @Incomplete need to recursively apply subst to everything
+let rec apply_subst_to_expr =
+  Ast.Expression.(
+    (subst, expr) =>
+      switch (expr) {
+      | Identifier({loc, name, kind}) =>
+        Identifier({loc, name, kind: apply_subst(subst, kind)})
+      | Apply({loc, func, args, kind}) =>
+        Apply({
+          loc,
+          func: apply_subst_to_id(subst, func),
+          args: List.map(apply_subst_to_expr(subst), args),
+          kind: apply_subst(subst, kind),
+        })
+      }
+  );
+
+exception UnifyError(string);
+
+let rec compose_subst = (s, s') =>
+  Subst.union(
+    Ast.(
+      (_, k, k') => {
+        switch (unify(k, k')) {
+        | x when Subst.is_empty(x) => Some(k)
+        | _ =>
+          raise(
+            UnifyError(
+              Printf.sprintf(
+                "Subst composition clash between %s and %s",
+                show_kind(k),
+                show_kind(k'),
+              ),
+            ),
+          )
+        };
+      }
+    ),
+    s,
+    s',
+  )
 // @Notsure - think about how to represent the "expected" type
-let rec unify = (a: Ast.kind, b: Ast.kind) =>
+and unify = (a: Ast.kind, b: Ast.kind) =>
   switch (a, b) {
   | (Int, Int) => Subst.empty
   | (Void, Void) => Subst.empty
@@ -168,15 +204,17 @@ let rec type_expression =
             )
           );
 
+        let composed_subst = compose_subst(subst, args_subst);
+
         (
           Apply({
             loc,
-            kind: apply_subst(subst, kind),
+            kind: apply_subst(composed_subst, kind),
             func: typed_func,
-            args: typed_args,
+            args: List.map(apply_subst_to_expr(subst), typed_args),
           }),
-          // @Incomplete should return subst - need to instanciate typed_func.kind
-          Subst.empty,
+          // @Incomplete need to instanciate typed_func.kind
+          composed_subst,
         );
       | BinaryOperator({loc, kind, operator, left, right}) =>
         let (typed_left, left_subst) = type_expression(left, scopes);

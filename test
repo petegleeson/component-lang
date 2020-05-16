@@ -4,4 +4,6 @@ let addOne = (x) {
   x + 1;
 };
 
-let six = addOne(five);
+let addTwo = (y) {
+  addOne(addOne(y));
+};
