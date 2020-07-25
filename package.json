@@ -18,6 +18,7 @@
   },
   "scripts": {
     "test": "esy x component_lang_compiler",
+    "unittest": "esy build && esy x RunTests.exe",
     "doc": "esy dune build @doc",
     "llc": "/usr/local/Cellar/llvm/10.0.0_3/bin/llc -march=wasm32 -filetype=obj",
     "link": "/usr/local/Cellar/llvm/10.0.0_3/bin/wasm-ld --no-entry --export-all -o",

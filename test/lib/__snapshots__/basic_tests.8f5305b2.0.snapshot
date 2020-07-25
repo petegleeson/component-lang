@@ -1,0 +1,9 @@
+basic tests › function that returns an int
+; ModuleID = 'test/lib/input/int-fn'
+source_filename = \"test/lib/input/int-fn\"
+
+define i32 @fn() {
+entry:
+  ret i32 1
+}
+
